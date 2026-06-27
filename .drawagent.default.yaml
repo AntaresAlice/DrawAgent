@@ -1,0 +1,45 @@
+# DrawAgent default configuration template
+# Values can be overridden by ~/.drawagent/config.yaml or .drawagent.yaml in project dir
+
+agent_a:
+  provider: openai
+  model: gpt-4o
+  api_base: https://api.openai.com/v1
+  api_key: ${OPENAI_API_KEY}
+  temperature: 0.7
+  max_tokens: 4096
+  system_prompt: default
+
+agent_b:
+  provider: local_zimage
+  model: Z-Image-Turbo
+  api_base: http://localhost:8000
+  endpoint: /api/generate
+  default_params:
+    width: 1024
+    height: 1024
+    steps: 8
+    guidance: 3.5
+    seed: -1
+  prompt_format: zimage
+
+agent_c:
+  provider: openai
+  model: gpt-4o
+  api_base: https://api.openai.com/v1
+  api_key: ${OPENAI_API_KEY}
+  temperature: 0.3
+  max_tokens: 2048
+
+loop:
+  max_iterations: 7
+  auto_accept_threshold: 8.0
+  compaction_threshold_tokens: 20000
+  keep_recent_iterations: 2
+
+memory:
+  base_dir: ~/.drawagent/memory
+  auto_load: true
+  auto_save: false
+
+output_dir: ./outputs
