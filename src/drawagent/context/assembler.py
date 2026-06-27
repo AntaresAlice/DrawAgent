@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import Optional
 
 from drawagent.agents.prompts import (
     BASE_SYSTEM_PROMPT,
@@ -23,8 +23,13 @@ class ContextAssembler:
       5. CurrentMessages (current turn messages)
     """
 
-    def __init__(self, agent_b_config: AgentBConfig):
+    def __init__(
+        self,
+        agent_b_config: AgentBConfig,
+        memory_store: Optional[object] = None,
+    ):
         self.agent_b_config = agent_b_config
+        self._memory_store = memory_store
 
     async def assemble(
         self,
@@ -38,12 +43,17 @@ class ContextAssembler:
             content=self._build_system_prompt(session),
         ))
 
-        if session.loaded_memories:
-            for memory_ref in session.loaded_memories:
-                messages.append(LLMMessage(
-                    role="system",
-                    content=f"<memory source='{memory_ref}'>\n[Memory loaded]\n</memory>",
-                ))
+        if session.loaded_memories and self._memory_store:
+            from drawagent.memory.store import MemoryStore
+            store = self._memory_store
+            if isinstance(store, MemoryStore):
+                for memory_ref in session.loaded_memories:
+                    content = await store.read(memory_ref)
+                    if content:
+                        messages.append(LLMMessage(
+                            role="system",
+                            content=f"<memory source='{memory_ref}'>\n{content}\n</memory>",
+                        ))
 
         if compacted:
             messages.append(LLMMessage(
