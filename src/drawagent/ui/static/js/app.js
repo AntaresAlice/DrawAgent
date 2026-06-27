@@ -22,6 +22,13 @@ const AppState = {
         maxIterations: 7,
         autoAccept: false,
         showIntermediate: true,
+        modelConfig: {
+            provider: 'openai',
+            model: 'gpt-4o',
+            apiBase: 'https://api.openai.com/v1',
+            apiKey: '',
+            temperature: 0.7,
+        },
     },
 
     viewer: {

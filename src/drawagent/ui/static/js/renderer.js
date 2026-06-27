@@ -206,7 +206,7 @@ const Renderer = {
 
         // Section titles
         const sections = document.querySelectorAll('.section-title');
-        const sectionKeys = ['sectionImage', 'sectionQuality', 'sectionAgent'];
+        const sectionKeys = ['sectionImage', 'sectionQuality', 'sectionAgent', 'sectionModel'];
         sections.forEach((sec, i) => {
             if (i < sectionKeys.length && sec.childNodes.length > 1) {
                 sec.childNodes[1].textContent = ' ' + _t(sectionKeys[i]);
@@ -222,6 +222,11 @@ const Renderer = {
             ['guidanceSlider', 'labelGuidance'],
             ['seedInput', 'labelSeed'],
             ['maxIterSlider', 'labelMaxIter'],
+            ['modelProvider', 'labelProvider'],
+            ['modelName', 'labelModel'],
+            ['modelApiBase', 'labelApiBase'],
+            ['modelApiKey', 'labelApiKey'],
+            ['modelTemperature', 'labelTemperature'],
         ].forEach(([forId, key]) => {
             const el = document.querySelector(`[for="${forId}"] span:first-child`);
             if (el) setText(el, _t(key));

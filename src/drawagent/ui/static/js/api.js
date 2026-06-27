@@ -14,7 +14,10 @@ const API = {
         };
         if (body) opts.body = JSON.stringify(body);
 
-        const resp = await fetch(`${this.baseUrl()}${path}`, opts);
+        const url = `${this.baseUrl()}${path}`;
+        console.debug('[API]', method, path, body ? JSON.stringify(body).slice(0, 200) : '');
+        const resp = await fetch(url, opts);
+        console.debug('[API]', resp.status, method, path);
         if (!resp.ok) {
             const err = await resp.text();
             throw new Error(`API ${method} ${path}: ${resp.status} — ${err}`);
@@ -86,14 +89,15 @@ const WSClient = {
         this.ws.onmessage = (event) => {
             try {
                 const msg = JSON.parse(event.data);
+                console.debug('[WS]', msg.type, msg);
                 EventRouter.dispatch(msg);
             } catch (e) {
                 console.error('WS parse error:', e);
             }
         };
 
-        this.ws.onopen = () => { console.log('WebSocket connected'); };
-        this.ws.onclose = () => { console.log('WebSocket disconnected'); };
+        this.ws.onopen = () => { console.debug('[WS] connected, session:', sessionId); };
+        this.ws.onclose = () => { console.debug('[WS] disconnected, session:', this.sessionId); };
         this.ws.onerror = (e) => { console.error('WebSocket error:', e); };
     },
 

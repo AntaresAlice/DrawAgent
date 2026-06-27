@@ -97,6 +97,7 @@ body {
 .sidebar-toggle { flex-shrink:0; }
 .sidebar-toggle-mobile { display:none; }
 .sidebar-collapsed .sidebar-toggle-mobile { display:block; }
+.sidebar-footer {
     padding:16px; border-top:1px solid var(--border);
     display:flex; flex-direction:column; gap:10px;
 }

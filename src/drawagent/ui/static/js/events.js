@@ -101,6 +101,8 @@ const AppActions = {
         const text = input.value.trim();
         if (!text || AppState.isLoading) return;
 
+        console.debug('[Action] sendMessage:', text.slice(0, 100));
+
         if (!AppState.currentSessionId) {
             await API.createSession(text);
         }
@@ -196,6 +198,16 @@ const AppActions = {
         AppState.settings.maxIterations = parseInt(document.getElementById('maxIterSlider').value);
         AppState.settings.autoAccept = document.getElementById('autoAcceptCb').checked;
         AppState.settings.showIntermediate = document.getElementById('showIntermediateCb').checked;
+
+        // Model config
+        const mc = AppState.settings.modelConfig;
+        const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+        mc.provider = getVal('modelProvider');
+        mc.model = getVal('modelName');
+        mc.apiBase = getVal('modelApiBase');
+        mc.apiKey = getVal('modelApiKey');
+        mc.temperature = parseFloat(getVal('modelTemperature')) || 0.7;
+
         AppState.saveSettings();
         document.getElementById('settingsPanel').classList.remove('active');
         Renderer.showToast(_t('settingsApplied'), 'success');
@@ -206,6 +218,7 @@ const AppActions = {
         AppState.settings.maxIterations = 7;
         AppState.settings.autoAccept = false;
         AppState.settings.showIntermediate = true;
+        AppState.settings.modelConfig = { provider: 'openai', model: 'gpt-4o', apiBase: 'https://api.openai.com/v1', apiKey: '', temperature: 0.7 };
         AppState.saveSettings();
         updateSettingsUI();
         Renderer.showToast(_t('settingsReset'), 'success');
@@ -227,4 +240,12 @@ function updateSettingsUI() {
     txt('seedValue', p.seed === -1 ? '-1 (' + _t('labelRandom') + ')' : p.seed);
     const aa = $('autoAcceptCb'); if (aa) aa.checked = AppState.settings.autoAccept;
     const si = $('showIntermediateCb'); if (si) si.checked = AppState.settings.showIntermediate;
+
+    const mc = AppState.settings.modelConfig;
+    set('modelProvider', mc.provider);
+    set('modelName', mc.model);
+    set('modelApiBase', mc.apiBase);
+    set('modelApiKey', mc.apiKey);
+    set('modelTemperature', mc.temperature);
+    txt('temperatureValue', mc.temperature);
 }

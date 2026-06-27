@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ from .schemas import (
     SessionInfo,
 )
 
+logger = logging.getLogger("drawagent.api")
 router = APIRouter(prefix="/api")
 
 _sessions_store: dict[str, "Session"] = {}
@@ -49,12 +51,14 @@ async def get_status():
 
 @router.post("/sessions", response_model=CreateSessionResponse)
 async def create_session(req: CreateSessionRequest):
+    logger.info("Creating session: request=%s, max_iter=%d", req.user_request[:80], req.max_iterations)
     session = _session_manager.create(
         user_request=req.user_request,
         max_iterations=req.max_iterations,
     )
     _sessions_store[session.id] = session
     _message_ids[session.id] = []
+    logger.info("Session created: %s", session.id)
     return CreateSessionResponse(session_id=session.id)
 
 
@@ -79,6 +83,7 @@ async def send_message(session_id: str, req: SendMessageRequest):
     if session is None:
         raise HTTPException(404, "Session not found")
 
+    logger.info("[Session %s] message: %s", session_id, req.text[:120])
     message_id = str(uuid.uuid4())[:8]
     _message_ids.setdefault(session_id, []).append({
         "id": message_id,
@@ -158,6 +163,36 @@ async def delete_session(session_id: str):
     _sessions_store.pop(session_id, None)
     _message_ids.pop(session_id, None)
     return {"deleted": True}
+
+
+@router.get("/config")
+async def get_config():
+    """Return the current application configuration (non-sensitive)."""
+    try:
+        from drawagent.config.loader import ConfigLoader
+        from pathlib import Path
+        config = await ConfigLoader.load(Path.cwd())
+        return {
+            "agent_a": {
+                "provider": config.agent_a.provider,
+                "model": config.agent_a.model,
+                "api_base": config.agent_a.api_base,
+                "temperature": config.agent_a.temperature,
+            },
+            "agent_b": {
+                "provider": config.agent_b.provider,
+                "model": config.agent_b.model,
+                "api_base": config.agent_b.api_base,
+            },
+            "agent_c": {
+                "provider": config.agent_c.provider,
+                "model": config.agent_c.model,
+                "api_base": config.agent_c.api_base,
+            },
+        }
+    except Exception as e:
+        logger.warning("Failed to load config: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 # These are set after init_routes is called

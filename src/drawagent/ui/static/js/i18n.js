@@ -90,6 +90,12 @@ const I18n = {
             listFailed: "获取会话列表失败",
 
             sessionDelete: "删除",
+            sectionModel: "模型配置",
+            labelProvider: "Provider",
+            labelModel: "模型",
+            labelApiBase: "API Base URL",
+            labelApiKey: "API Key",
+            labelTemperature: "Temperature",
         },
         "en": {
             welcome: "DrawAgent",
@@ -175,6 +181,12 @@ const I18n = {
             listFailed: "Failed to list sessions",
 
             sessionDelete: "Del",
+            sectionModel: "Model Config",
+            labelProvider: "Provider",
+            labelModel: "Model",
+            labelApiBase: "API Base URL",
+            labelApiKey: "API Key",
+            labelTemperature: "Temperature",
         }
     },
 

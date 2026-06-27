@@ -165,6 +165,29 @@
                         </label>
                     </div>
                 </div>
+                <div class="setting-section">
+                    <div class="section-title"><i class="fa-solid fa-microchip"></i> 模型配置</div>
+                    <div class="slider-group">
+                        <label class="slider-label" for="modelProvider"><span>Provider</span><span></span></label>
+                        <input type="text" class="text-input" id="modelProvider" value="openai">
+                    </div>
+                    <div class="slider-group">
+                        <label class="slider-label" for="modelName"><span>模型</span><span></span></label>
+                        <input type="text" class="text-input" id="modelName" value="gpt-4o">
+                    </div>
+                    <div class="slider-group">
+                        <label class="slider-label" for="modelApiBase"><span>API Base URL</span><span></span></label>
+                        <input type="text" class="text-input" id="modelApiBase" value="https://api.openai.com/v1">
+                    </div>
+                    <div class="slider-group">
+                        <label class="slider-label" for="modelApiKey"><span>API Key</span><span></span></label>
+                        <input type="password" class="text-input" id="modelApiKey" placeholder="sk-...">
+                    </div>
+                    <div class="slider-group">
+                        <label class="slider-label" for="modelTemperature"><span>Temperature</span><span id="temperatureValue">0.7</span></label>
+                        <input type="range" class="slider" id="modelTemperature" min="0" max="1.5" step="0.1" value="0.7">
+                    </div>
+                </div>
                 <div class="settings-actions">
                     <button class="btn btn-primary" id="applySettingsBtn">应用</button>
                     <button class="btn btn-secondary" id="resetSettingsBtn">重置</button>
@@ -237,6 +260,7 @@
                 guidanceSlider: document.getElementById('guidanceSlider'),
                 maxIterSlider: document.getElementById('maxIterSlider'),
                 seedInput: document.getElementById('seedInput'),
+                modelTemperature: document.getElementById('modelTemperature'),
             };
 
             function toggleSidebar() {
@@ -298,7 +322,7 @@
             els.viewerNext.addEventListener('click', () => Viewer.next());
             els.randomSeedBtn.addEventListener('click', () => { els.seedInput.value = Math.floor(Math.random() * 1000000); });
 
-            const sliderPairs = [[els.widthSlider,'widthValue'],[els.heightSlider,'heightValue'],[els.countSlider,'countValue'],[els.stepsSlider,'stepsValue'],[els.guidanceSlider,'guidanceValue'],[els.maxIterSlider,'maxIterValue']];
+            const sliderPairs = [[els.widthSlider,'widthValue'],[els.heightSlider,'heightValue'],[els.countSlider,'countValue'],[els.stepsSlider,'stepsValue'],[els.guidanceSlider,'guidanceValue'],[els.maxIterSlider,'maxIterValue'],[els.modelTemperature,'temperatureValue']];
             sliderPairs.forEach(([slider, displayId]) => slider.addEventListener('input', () => document.getElementById(displayId).textContent = slider.value));
             els.seedInput.addEventListener('input', () => {
                 const v = els.seedInput.value;
