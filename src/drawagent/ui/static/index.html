@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <title>DrawAgent — AI Image Generation</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fa-solid fa-wand-magic-sparkles logo-icon"></i>
+                    <span class="logo-text">DrawAgent</span>
+                </div>
+                <button class="sidebar-toggle" id="sidebarToggle" title="Toggle sidebar">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+            </div>
+            <div class="conversations-list" id="conversationsList">
+            </div>
+            <div class="sidebar-footer">
+                <button class="new-session-btn" id="newSessionBtn">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>New Session</span>
+                </button>
+                <button class="settings-btn" id="settingsBtn">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>Parameters</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-area" id="chatArea">
+            <div class="chat-header">
+                <button class="sidebar-toggle-mobile" id="sidebarToggleMobile">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="chat-header-info">
+                    <h2 class="chat-title" id="chatTitle">DrawAgent</h2>
+                    <span class="chat-status" id="chatStatus">Ready</span>
+                </div>
+                <div class="chat-header-actions">
+                    <button class="header-btn" id="clearChatBtn" title="Clear chat">
+                        <i class="fa-solid fa-eraser"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="messages-container" id="messagesContainer">
+                <div class="welcome-screen" id="welcomeScreen">
+                    <div class="welcome-icon">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </div>
+                    <h1>DrawAgent</h1>
+                    <p>Describe the image you want, and I'll create it for you.</p>
+                    <div class="welcome-suggestions">
+                        <button class="suggestion-chip">A cat sitting on a windowsill, golden hour lighting</button>
+                        <button class="suggestion-chip">A futuristic cityscape at night with neon lights</button>
+                        <button class="suggestion-chip">A portrait of a warrior princess in armor</button>
+                        <button class="suggestion-chip">A serene Japanese garden with cherry blossoms</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-area" id="inputArea">
+                <div class="input-container">
+                    <textarea
+                        id="promptInput"
+                        class="prompt-input"
+                        placeholder="Describe the image you want to generate..."
+                        rows="1"
+                    ></textarea>
+                    <button class="send-btn" id="sendButton" title="Send (Ctrl+Enter)">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                </div>
+                <div class="interrupt-bar" id="interruptBar" style="display:none;">
+                    <span class="interrupt-label">Generation in progress</span>
+                    <div class="interrupt-actions">
+                        <button class="interrupt-btn accept" id="acceptBtn" title="Accept current result">
+                            <i class="fa-solid fa-check"></i> Accept
+                        </button>
+                        <button class="interrupt-btn steer" id="steerBtn" title="Modify direction">
+                            <i class="fa-solid fa-compass"></i> Steer
+                        </button>
+                        <button class="interrupt-btn pause" id="pauseBtn" title="Pause">
+                            <i class="fa-solid fa-pause"></i> Pause
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Settings Panel -->
+        <div class="settings-panel" id="settingsPanel">
+            <div class="settings-header">
+                <h3>Generation Parameters</h3>
+                <button class="settings-close" id="settingsClose">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="settings-content">
+                <div class="setting-section">
+                    <div class="section-title"><i class="fa-solid fa-image"></i> Image</div>
+                    <div class="slider-group">
+                        <label class="slider-label">
+                            <span>Width</span>
+                            <span id="widthValue">1024</span>
+                        </label>
+                        <input type="range" class="slider" id="widthSlider" min="512" max="2048" step="64" value="1024">
+                    </div>
+                    <div class="slider-group">
+                        <label class="slider-label">
+                            <span>Height</span>
+                            <span id="heightValue">1024</span>
+                        </label>
+                        <input type="range" class="slider" id="heightSlider" min="512" max="2048" step="64" value="1024">
+                    </div>
+                    <div class="slider-group">
+                        <label class="slider-label">
+                            <span>Images per round</span>
+                            <span id="countValue">2</span>
+                        </label>
+                        <input type="range" class="slider" id="countSlider" min="1" max="4" step="1" value="2">
+                    </div>
+                </div>
+                <div class="setting-section">
+                    <div class="section-title"><i class="fa-solid fa-gear"></i> Quality</div>
+                    <div class="slider-group">
+                        <label class="slider-label">
+                            <span>Steps</span>
+                            <span id="stepsValue">8</span>
+                        </label>
+                        <input type="range" class="slider" id="stepsSlider" min="4" max="20" step="1" value="8">
+                    </div>
+                    <div class="slider-group">
+                        <label class="slider-label">
+                            <span>Guidance</span>
+                            <span id="guidanceValue">3.5</span>
+                        </label>
+                        <input type="range" class="slider" id="guidanceSlider" min="1" max="10" step="0.5" value="3.5">
+                    </div>
+                    <div class="slider-group">
+                        <label class="slider-label">
+                            <span>Seed</span>
+                            <span id="seedValue">-1 (random)</span>
+                        </label>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <input type="number" class="text-input" id="seedInput" value="-1" style="flex:1;">
+                            <button class="btn btn-secondary" id="randomSeedBtn" style="flex:0;">
+                                <i class="fa-solid fa-shuffle"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="setting-section">
+                    <div class="section-title"><i class="fa-solid fa-robot"></i> Agent</div>
+                    <div class="slider-group">
+                        <label class="slider-label">
+                            <span>Max Iterations</span>
+                            <span id="maxIterValue">7</span>
+                        </label>
+                        <input type="range" class="slider" id="maxIterSlider" min="1" max="15" step="1" value="7">
+                    </div>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="autoAcceptCb">
+                            <span class="checkbox-custom"></span>
+                            Auto-accept when quality is met
+                        </label>
+                    </div>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="showIntermediateCb" checked>
+                            <span class="checkbox-custom"></span>
+                            Show intermediate results
+                        </label>
+                    </div>
+                </div>
+                <div class="settings-actions">
+                    <button class="btn btn-primary" id="applySettingsBtn">Apply</button>
+                    <button class="btn btn-secondary" id="resetSettingsBtn">Reset</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Image Viewer Modal -->
+        <div class="viewer-overlay" id="viewerOverlay">
+            <div class="viewer-container">
+                <button class="viewer-close" id="viewerClose">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <button class="viewer-nav prev" id="viewerPrev">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <div class="viewer-image-wrapper">
+                    <img id="viewerImage" src="" alt="Generated image">
+                </div>
+                <button class="viewer-nav next" id="viewerNext">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+                <div class="viewer-info" id="viewerInfo">
+                    <span id="viewerIndex">1/1</span>
+                    <span id="viewerSeed">Seed: -</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/events.js"></script>
+    <script src="js/viewer.js"></script>
+    <script>
+        // UI Initialization — wires DOM elements to AppActions and event handlers
+        document.addEventListener('DOMContentLoaded', () => {
+            AppState.init();
+            updateSettingsUI();
+
+            const els = {
+                sidebar: document.getElementById('sidebar'),
+                sidebarToggle: document.getElementById('sidebarToggle'),
+                sidebarToggleMobile: document.getElementById('sidebarToggleMobile'),
+                settingsPanel: document.getElementById('settingsPanel'),
+                settingsClose: document.getElementById('settingsClose'),
+                settingsBtn: document.getElementById('settingsBtn'),
+                newSessionBtn: document.getElementById('newSessionBtn'),
+                sendButton: document.getElementById('sendButton'),
+                promptInput: document.getElementById('promptInput'),
+                clearChatBtn: document.getElementById('clearChatBtn'),
+                acceptBtn: document.getElementById('acceptBtn'),
+                steerBtn: document.getElementById('steerBtn'),
+                pauseBtn: document.getElementById('pauseBtn'),
+                settingsApply: document.getElementById('applySettingsBtn'),
+                settingsReset: document.getElementById('resetSettingsBtn'),
+                viewerOverlay: document.getElementById('viewerOverlay'),
+                viewerClose: document.getElementById('viewerClose'),
+                viewerPrev: document.getElementById('viewerPrev'),
+                viewerNext: document.getElementById('viewerNext'),
+                randomSeedBtn: document.getElementById('randomSeedBtn'),
+                widthSlider: document.getElementById('widthSlider'),
+                heightSlider: document.getElementById('heightSlider'),
+                countSlider: document.getElementById('countSlider'),
+                stepsSlider: document.getElementById('stepsSlider'),
+                guidanceSlider: document.getElementById('guidanceSlider'),
+                maxIterSlider: document.getElementById('maxIterSlider'),
+                seedInput: document.getElementById('seedInput'),
+            };
+
+            function toggleSidebar() {
+                els.sidebar.classList.toggle('collapsed');
+                const icon = els.sidebarToggle.querySelector('i');
+                icon.classList.toggle('fa-chevron-left');
+                icon.classList.toggle('fa-chevron-right');
+            }
+
+            els.sidebarToggle.addEventListener('click', toggleSidebar);
+            els.sidebarToggleMobile.addEventListener('click', () => {
+                els.sidebar.classList.toggle('mobile-open');
+            });
+
+            els.settingsBtn.addEventListener('click', () => els.settingsPanel.classList.add('active'));
+            els.settingsClose.addEventListener('click', () => els.settingsPanel.classList.remove('active'));
+            els.newSessionBtn.addEventListener('click', () => AppActions.newSession());
+
+            els.sendButton.addEventListener('click', () => AppActions.sendMessage());
+            els.promptInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    AppActions.sendMessage();
+                }
+                setTimeout(() => {
+                    els.promptInput.style.height = 'auto';
+                    els.promptInput.style.height = Math.min(els.promptInput.scrollHeight, 120) + 'px';
+                }, 0);
+            });
+
+            els.clearChatBtn.addEventListener('click', () => {
+                if (confirm('Clear current chat?')) {
+                    Renderer.clearMessages();
+                    AppState.messages = [];
+                }
+            });
+
+            els.acceptBtn.addEventListener('click', () => AppActions.acceptCurrent());
+            els.steerBtn.addEventListener('click', () => AppActions.steer());
+            els.pauseBtn.addEventListener('click', () => AppActions.pauseResume());
+
+            els.settingsApply.addEventListener('click', () => AppActions.applySettings());
+            els.settingsReset.addEventListener('click', () => AppActions.resetSettings());
+
+            els.viewerClose.addEventListener('click', () => Viewer.close());
+            els.viewerOverlay.addEventListener('click', (e) => {
+                if (e.target === els.viewerOverlay) Viewer.close();
+            });
+            els.viewerPrev.addEventListener('click', () => Viewer.prev());
+            els.viewerNext.addEventListener('click', () => Viewer.next());
+
+            els.randomSeedBtn.addEventListener('click', () => {
+                els.seedInput.value = Math.floor(Math.random() * 1000000);
+            });
+
+            // Slider value display updates
+            const sliderPairs = [
+                [els.widthSlider, 'widthValue'],
+                [els.heightSlider, 'heightValue'],
+                [els.countSlider, 'countValue'],
+                [els.stepsSlider, 'stepsValue'],
+                [els.guidanceSlider, 'guidanceValue'],
+                [els.maxIterSlider, 'maxIterValue'],
+            ];
+            sliderPairs.forEach(([slider, displayId]) => {
+                slider.addEventListener('input', () => {
+                    document.getElementById(displayId).textContent = slider.value;
+                });
+            });
+            els.seedInput.addEventListener('input', () => {
+                const v = els.seedInput.value;
+                document.getElementById('seedValue').textContent = v === '-1' ? '-1 (random)' : v;
+            });
+
+            // Suggestion chip clicks
+            document.querySelectorAll('.suggestion-chip').forEach(chip => {
+                chip.addEventListener('click', () => {
+                    els.promptInput.value = chip.textContent;
+                    AppActions.sendMessage();
+                });
+            });
+
+            // Initial session load
+            AppActions.refreshSessions();
+        });
+    </script>
+</body>
+</html>
