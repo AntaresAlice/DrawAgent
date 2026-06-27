@@ -1,5 +1,6 @@
-"""Allow `python -m drawagent` entry point."""
+"""Entry point for python -m drawagent."""
 
 from drawagent.main import main
 
-main()
+if __name__ == "__main__":
+    main()
