@@ -257,6 +257,16 @@
                 }
             });
 
+            els.settingsBtn.addEventListener('click', () => els.settingsPanel.classList.add('active'));
+            els.settingsClose.addEventListener('click', () => els.settingsPanel.classList.remove('active'));
+            els.newSessionBtn.addEventListener('click', () => AppActions.newSession());
+
+            els.sendButton.addEventListener('click', () => AppActions.sendMessage());
+            els.promptInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); AppActions.sendMessage(); }
+                setTimeout(() => { els.promptInput.style.height = 'auto'; els.promptInput.style.height = Math.min(els.promptInput.scrollHeight, 120) + 'px'; }, 0);
+            });
+
             els.clearChatBtn.addEventListener('click', () => {
                 if (confirm(_t('clearConfirm'))) { Renderer.clearMessages(); AppState.messages = []; }
             });

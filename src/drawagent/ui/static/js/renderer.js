@@ -152,57 +152,114 @@ const Renderer = {
         });
     },
 
-    /** Refresh all i18n text in static DOM elements */
+    /** Refresh all i18n text in static DOM elements. All operations are null-safe. */
     refreshI18n() {
-        const langToggle = document.getElementById('langToggle');
+        const $ = (id) => document.getElementById(id);
+        const $$ = (sel) => document.querySelector(sel);
+
+        const setText = (el, text) => { if (el) el.textContent = text; };
+        const setTitle = (el, text) => { if (el) el.title = text; };
+        const setPlaceholder = (el, text) => { if (el) el.placeholder = text; };
+
+        // Lang toggle badge
+        const langToggle = $('langToggle');
         if (langToggle) langToggle.setAttribute('data-lang', I18n.getLang() === 'zh-CN' ? '中' : 'EN');
 
-        document.getElementById('newSessionBtn').querySelector('span').textContent = _t('newSession');
-        document.getElementById('settingsBtn').querySelector('span').textContent = _t('parameters');
-        document.getElementById('clearChatBtn').title = _t('clearChatTitle');
-        document.getElementById('promptInput').placeholder = _t('inputPlaceholder');
-        document.getElementById('sendButton').title = _t('sendTitle');
-        document.getElementById('interruptBar').querySelector('.interrupt-label').textContent = _t('interruptLabel');
+        // Sidebar buttons
+        const nsb = $('newSessionBtn');
+        if (nsb) { const sp = nsb.querySelector('span'); if (sp) setText(sp, _t('newSession')); }
+        const sb = $('settingsBtn');
+        if (sb) { const sp = sb.querySelector('span'); if (sp) setText(sp, _t('parameters')); }
 
-        const acceptBtn = document.getElementById('acceptBtn');
-        acceptBtn.title = _t('acceptTitle');
-        acceptBtn.childNodes[1].textContent = ' ' + _t('acceptBtn');
-        const steerBtnEl = document.getElementById('steerBtn');
-        steerBtnEl.title = _t('steerTitle');
-        steerBtnEl.childNodes[1].textContent = ' ' + _t('steerBtn');
-        const pauseBtnEl = document.getElementById('pauseBtn');
-        pauseBtnEl.title = _t('pauseTitle');
-        pauseBtnEl.childNodes[1].textContent = ' ' + _t('pauseBtn');
+        // Chat header
+        setTitle($('clearChatBtn'), _t('clearChatTitle'));
 
-        document.querySelector('.settings-header h3').textContent = _t('settingsTitle');
+        // Input area
+        setPlaceholder($('promptInput'), _t('inputPlaceholder'));
+        setTitle($('sendButton'), _t('sendTitle'));
+
+        // Interrupt bar
+        const ibar = $('interruptBar');
+        if (ibar) {
+            const label = ibar.querySelector('.interrupt-label');
+            if (label) setText(label, _t('interruptLabel'));
+        }
+        // Interrupt buttons — update text node after icon (childNodes[2])
+        [$('acceptBtn'), $('steerBtn'), $('pauseBtn')].forEach(btn => {
+            if (!btn) return;
+            const key = btn.id === 'acceptBtn' ? 'acceptBtn' : btn.id === 'steerBtn' ? 'steerBtn' : 'pauseBtn';
+            const titleKey = btn.id === 'acceptBtn' ? 'acceptTitle' : btn.id === 'steerBtn' ? 'steerTitle' : 'pauseTitle';
+            setTitle(btn, _t(titleKey));
+            // Update text after icon: <i>..</i> text
+            const txt = btn.childNodes;
+            for (let i = 0; i < txt.length; i++) {
+                if (txt[i].nodeType === 3 && txt[i].textContent.trim()) {
+                    txt[i].textContent = ' ' + _t(key);
+                    break;
+                }
+            }
+        });
+
+        // Settings panel header
+        const sh3 = $$('.settings-header h3');
+        setText(sh3, _t('settingsTitle'));
+
+        // Section titles
         const sections = document.querySelectorAll('.section-title');
-        if (sections[0]) sections[0].childNodes[1].textContent = ' ' + _t('sectionImage');
-        document.querySelector('[for="widthSlider"] span:first-child').textContent = _t('labelWidth');
-        document.querySelector('[for="heightSlider"] span:first-child').textContent = _t('labelHeight');
-        document.querySelector('[for="countSlider"] span:first-child').textContent = _t('labelCount');
-        if (sections[1]) sections[1].childNodes[1].textContent = ' ' + _t('sectionQuality');
-        document.querySelector('[for="stepsSlider"] span:first-child').textContent = _t('labelSteps');
-        document.querySelector('[for="guidanceSlider"] span:first-child').textContent = _t('labelGuidance');
-        document.querySelector('[for="seedInput"] span:first-child').textContent = _t('labelSeed');
-        if (sections[2]) sections[2].childNodes[1].textContent = ' ' + _t('sectionAgent');
-        document.querySelector('[for="maxIterSlider"] span:first-child').textContent = _t('labelMaxIter');
-        document.querySelector('[for="autoAcceptCb"]').parentElement.childNodes[2].textContent = _t('labelAutoAccept');
-        document.querySelector('[for="showIntermediateCb"]').parentElement.childNodes[2].textContent = _t('labelShowIntermediate');
-        document.getElementById('applySettingsBtn').textContent = _t('apply');
-        document.getElementById('resetSettingsBtn').textContent = _t('reset');
+        const sectionKeys = ['sectionImage', 'sectionQuality', 'sectionAgent'];
+        sections.forEach((sec, i) => {
+            if (i < sectionKeys.length && sec.childNodes.length > 1) {
+                sec.childNodes[1].textContent = ' ' + _t(sectionKeys[i]);
+            }
+        });
 
-        const chatStatus = document.getElementById('chatStatus');
-        if (chatStatus && !AppState.isLoading) chatStatus.textContent = _t('ready');
+        // Slider labels — update first span in each label
+        [
+            ['widthSlider', 'labelWidth'],
+            ['heightSlider', 'labelHeight'],
+            ['countSlider', 'labelCount'],
+            ['stepsSlider', 'labelSteps'],
+            ['guidanceSlider', 'labelGuidance'],
+            ['seedInput', 'labelSeed'],
+            ['maxIterSlider', 'labelMaxIter'],
+        ].forEach(([forId, key]) => {
+            const el = document.querySelector(`[for="${forId}"] span:first-child`);
+            if (el) setText(el, _t(key));
+        });
 
-        document.getElementById('randomSeedBtn').querySelector('i').nextSibling && (document.getElementById('randomSeedBtn').querySelector('i').nextSibling.textContent = '');
+        // Checkbox labels
+        const updateCheckboxLabel = (forId, key) => {
+            const label = document.querySelector(`[for="${forId}"]`);
+            if (label && label.parentElement) {
+                const nodes = label.parentElement.childNodes;
+                for (const n of nodes) {
+                    if (n.nodeType === 3 && n.textContent.trim()) { n.textContent = _t(key); break; }
+                    if (n.nodeType === 1 && n.tagName === 'LABEL') {
+                        const labels = n.childNodes;
+                        for (const ln of labels) {
+                            if (ln.nodeType === 3 && ln.textContent.trim()) { ln.textContent = _t(key); break; }
+                        }
+                        break;
+                    }
+                }
+            }
+        };
+        updateCheckboxLabel('autoAcceptCb', 'labelAutoAccept');
+        updateCheckboxLabel('showIntermediateCb', 'labelShowIntermediate');
 
-        // Welcome screen if present
-        const ws = document.getElementById('welcomeScreen');
+        // Action buttons
+        setText($('applySettingsBtn'), _t('apply'));
+        setText($('resetSettingsBtn'), _t('reset'));
+
+        // Status bar
+        const status = $('chatStatus');
+        if (status && !AppState.isLoading) setText(status, _t('ready'));
+
+        // Welcome screen
+        const ws = $('welcomeScreen');
         if (ws) {
-            const h1 = ws.querySelector('h1');
-            if (h1) h1.textContent = _t('welcome');
-            const p = ws.querySelector('p');
-            if (p) p.textContent = _t('welcomeDesc');
+            const h1 = ws.querySelector('h1'); if (h1) setText(h1, _t('welcome'));
+            const p = ws.querySelector('p'); if (p) setText(p, _t('welcomeDesc'));
         }
 
         updateSettingsUI();

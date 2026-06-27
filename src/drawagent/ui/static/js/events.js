@@ -214,16 +214,17 @@ const AppActions = {
 
 function updateSettingsUI() {
     const p = AppState.settings.generationParams;
-    const set = (id, v) => { document.getElementById(id).value = v; };
-    const txt = (id, v) => { document.getElementById(id).textContent = v; };
+    const $ = (id) => document.getElementById(id);
+    const set = (id, v) => { const el = $(id); if (el) el.value = v; };
+    const txt = (id, v) => { const el = $(id); if (el) el.textContent = v; };
     set('widthSlider', p.width); txt('widthValue', p.width);
     set('heightSlider', p.height); txt('heightValue', p.height);
     set('countSlider', p.numImages); txt('countValue', p.numImages);
     set('stepsSlider', p.steps); txt('stepsValue', p.steps);
     set('guidanceSlider', p.guidance); txt('guidanceValue', p.guidance);
     set('maxIterSlider', AppState.settings.maxIterations); txt('maxIterValue', AppState.settings.maxIterations);
-    document.getElementById('seedInput').value = p.seed;
-    document.getElementById('seedValue').textContent = p.seed === -1 ? '-1 (' + _t('labelRandom') + ')' : p.seed;
-    document.getElementById('autoAcceptCb').checked = AppState.settings.autoAccept;
-    document.getElementById('showIntermediateCb').checked = AppState.settings.showIntermediate;
+    set('seedInput', p.seed);
+    txt('seedValue', p.seed === -1 ? '-1 (' + _t('labelRandom') + ')' : p.seed);
+    const aa = $('autoAcceptCb'); if (aa) aa.checked = AppState.settings.autoAccept;
+    const si = $('showIntermediateCb'); if (si) si.checked = AppState.settings.showIntermediate;
 }
