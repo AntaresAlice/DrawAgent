@@ -1,6 +1,5 @@
 /**
  * Viewer — fullscreen image viewer with keyboard navigation.
- * Reference: webui_v6.html viewer pattern.
  */
 const Viewer = {
     isOpen: false,
@@ -42,11 +41,10 @@ const Viewer = {
 
         if (img) img.src = this.images[this.currentIndex];
         if (index) index.textContent = `${this.currentIndex + 1}/${this.images.length}`;
-        if (seed) seed.textContent = '';
+        if (seed) seed.textContent = `${_t('seedLabel')}: -`;
     },
 };
 
-// Keyboard controls
 document.addEventListener('keydown', (e) => {
     if (!Viewer.isOpen) return;
     switch (e.key) {

@@ -8,12 +8,13 @@ const AppState = {
     messages: [],
 
     isLoading: false,
-    loopStatus: null,       // null | "running" | "completed"
+    loopStatus: null,
     currentIteration: 0,
     maxIterations: 7,
 
     settings: {
         serverUrl: 'http://127.0.0.1:8000',
+        lang: 'zh-CN',
         generationParams: {
             width: 1024, height: 1024,
             numImages: 2, steps: 8, guidance: 3.5, seed: -1,
@@ -44,3 +45,6 @@ const AppState = {
         localStorage.setItem('drawagent_settings', JSON.stringify(this.settings));
     },
 };
+
+/** shorthand for I18n.t */
+const _t = (key, params) => I18n.t(key, params);

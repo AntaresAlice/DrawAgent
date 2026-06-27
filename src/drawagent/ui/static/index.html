@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-    <title>DrawAgent — AI Image Generation</title>
+    <title>DrawAgent — AI 图像生成</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -17,7 +17,7 @@
                     <i class="fa-solid fa-wand-magic-sparkles logo-icon"></i>
                     <span class="logo-text">DrawAgent</span>
                 </div>
-                <button class="sidebar-toggle" id="sidebarToggle" title="Toggle sidebar">
+                <button class="sidebar-toggle" id="sidebarToggle" title="切换侧边栏">
                     <i class="fa-solid fa-chevron-left"></i>
                 </button>
             </div>
@@ -26,11 +26,11 @@
             <div class="sidebar-footer">
                 <button class="new-session-btn" id="newSessionBtn">
                     <i class="fa-solid fa-plus"></i>
-                    <span>New Session</span>
+                    <span>新建会话</span>
                 </button>
                 <button class="settings-btn" id="settingsBtn">
                     <i class="fa-solid fa-sliders"></i>
-                    <span>Parameters</span>
+                    <span>生成参数</span>
                 </button>
             </div>
         </aside>
@@ -43,10 +43,13 @@
                 </button>
                 <div class="chat-header-info">
                     <h2 class="chat-title" id="chatTitle">DrawAgent</h2>
-                    <span class="chat-status" id="chatStatus">Ready</span>
+                    <span class="chat-status" id="chatStatus">就绪</span>
                 </div>
                 <div class="chat-header-actions">
-                    <button class="header-btn" id="clearChatBtn" title="Clear chat">
+                    <button class="header-btn lang-btn" id="langToggle" title="Switch Language / 切换语言">
+                        <i class="fa-solid fa-language"></i>
+                    </button>
+                    <button class="header-btn" id="clearChatBtn" title="清空对话">
                         <i class="fa-solid fa-eraser"></i>
                     </button>
                 </div>
@@ -58,12 +61,12 @@
                         <i class="fa-solid fa-wand-magic-sparkles"></i>
                     </div>
                     <h1>DrawAgent</h1>
-                    <p>Describe the image you want, and I'll create it for you.</p>
+                    <p>描述你想要的图像，我来为你生成。</p>
                     <div class="welcome-suggestions">
-                        <button class="suggestion-chip">A cat sitting on a windowsill, golden hour lighting</button>
-                        <button class="suggestion-chip">A futuristic cityscape at night with neon lights</button>
-                        <button class="suggestion-chip">A portrait of a warrior princess in armor</button>
-                        <button class="suggestion-chip">A serene Japanese garden with cherry blossoms</button>
+                        <button class="suggestion-chip">一只猫坐在窗台上，金色阳光照进来</button>
+                        <button class="suggestion-chip">夜晚的未来城市景观，霓虹灯闪烁</button>
+                        <button class="suggestion-chip">一位身着铠甲的战士公主肖像</button>
+                        <button class="suggestion-chip">宁静的日本庭院，樱花飘落</button>
                     </div>
                 </div>
             </div>
@@ -73,24 +76,24 @@
                     <textarea
                         id="promptInput"
                         class="prompt-input"
-                        placeholder="Describe the image you want to generate..."
+                        placeholder="描述你想要生成的图像..."
                         rows="1"
                     ></textarea>
-                    <button class="send-btn" id="sendButton" title="Send (Ctrl+Enter)">
+                    <button class="send-btn" id="sendButton" title="发送 (Ctrl+Enter)">
                         <i class="fa-solid fa-paper-plane"></i>
                     </button>
                 </div>
                 <div class="interrupt-bar" id="interruptBar" style="display:none;">
-                    <span class="interrupt-label">Generation in progress</span>
+                    <span class="interrupt-label">正在生成</span>
                     <div class="interrupt-actions">
-                        <button class="interrupt-btn accept" id="acceptBtn" title="Accept current result">
-                            <i class="fa-solid fa-check"></i> Accept
+                        <button class="interrupt-btn accept" id="acceptBtn" title="接受当前结果">
+                            <i class="fa-solid fa-check"></i> 接受
                         </button>
-                        <button class="interrupt-btn steer" id="steerBtn" title="Modify direction">
-                            <i class="fa-solid fa-compass"></i> Steer
+                        <button class="interrupt-btn steer" id="steerBtn" title="调整方向">
+                            <i class="fa-solid fa-compass"></i> 修改方向
                         </button>
-                        <button class="interrupt-btn pause" id="pauseBtn" title="Pause">
-                            <i class="fa-solid fa-pause"></i> Pause
+                        <button class="interrupt-btn pause" id="pauseBtn" title="暂停">
+                            <i class="fa-solid fa-pause"></i> 暂停
                         </button>
                     </div>
                 </div>
@@ -100,57 +103,39 @@
         <!-- Settings Panel -->
         <div class="settings-panel" id="settingsPanel">
             <div class="settings-header">
-                <h3>Generation Parameters</h3>
+                <h3>生成参数</h3>
                 <button class="settings-close" id="settingsClose">
                     <i class="fa-solid fa-xmark"></i>
                 </button>
             </div>
             <div class="settings-content">
                 <div class="setting-section">
-                    <div class="section-title"><i class="fa-solid fa-image"></i> Image</div>
+                    <div class="section-title"><i class="fa-solid fa-image"></i> 图像</div>
                     <div class="slider-group">
-                        <label class="slider-label">
-                            <span>Width</span>
-                            <span id="widthValue">1024</span>
-                        </label>
+                        <label class="slider-label" for="widthSlider"><span>宽度</span><span id="widthValue">1024</span></label>
                         <input type="range" class="slider" id="widthSlider" min="512" max="2048" step="64" value="1024">
                     </div>
                     <div class="slider-group">
-                        <label class="slider-label">
-                            <span>Height</span>
-                            <span id="heightValue">1024</span>
-                        </label>
+                        <label class="slider-label" for="heightSlider"><span>高度</span><span id="heightValue">1024</span></label>
                         <input type="range" class="slider" id="heightSlider" min="512" max="2048" step="64" value="1024">
                     </div>
                     <div class="slider-group">
-                        <label class="slider-label">
-                            <span>Images per round</span>
-                            <span id="countValue">2</span>
-                        </label>
+                        <label class="slider-label" for="countSlider"><span>每轮张数</span><span id="countValue">2</span></label>
                         <input type="range" class="slider" id="countSlider" min="1" max="4" step="1" value="2">
                     </div>
                 </div>
                 <div class="setting-section">
-                    <div class="section-title"><i class="fa-solid fa-gear"></i> Quality</div>
+                    <div class="section-title"><i class="fa-solid fa-gear"></i> 质量</div>
                     <div class="slider-group">
-                        <label class="slider-label">
-                            <span>Steps</span>
-                            <span id="stepsValue">8</span>
-                        </label>
+                        <label class="slider-label" for="stepsSlider"><span>步数</span><span id="stepsValue">8</span></label>
                         <input type="range" class="slider" id="stepsSlider" min="4" max="20" step="1" value="8">
                     </div>
                     <div class="slider-group">
-                        <label class="slider-label">
-                            <span>Guidance</span>
-                            <span id="guidanceValue">3.5</span>
-                        </label>
+                        <label class="slider-label" for="guidanceSlider"><span>引导力</span><span id="guidanceValue">3.5</span></label>
                         <input type="range" class="slider" id="guidanceSlider" min="1" max="10" step="0.5" value="3.5">
                     </div>
                     <div class="slider-group">
-                        <label class="slider-label">
-                            <span>Seed</span>
-                            <span id="seedValue">-1 (random)</span>
-                        </label>
+                        <label class="slider-label" for="seedInput"><span>种子</span><span id="seedValue">-1 (随机)</span></label>
                         <div style="display:flex;gap:8px;align-items:center;">
                             <input type="number" class="text-input" id="seedInput" value="-1" style="flex:1;">
                             <button class="btn btn-secondary" id="randomSeedBtn" style="flex:0;">
@@ -160,32 +145,29 @@
                     </div>
                 </div>
                 <div class="setting-section">
-                    <div class="section-title"><i class="fa-solid fa-robot"></i> Agent</div>
+                    <div class="section-title"><i class="fa-solid fa-robot"></i> 智能体</div>
                     <div class="slider-group">
-                        <label class="slider-label">
-                            <span>Max Iterations</span>
-                            <span id="maxIterValue">7</span>
-                        </label>
+                        <label class="slider-label" for="maxIterSlider"><span>最大轮数</span><span id="maxIterValue">7</span></label>
                         <input type="range" class="slider" id="maxIterSlider" min="1" max="15" step="1" value="7">
                     </div>
                     <div class="checkbox-group">
-                        <label class="checkbox-label">
+                        <label class="checkbox-label" for="autoAcceptCb">
                             <input type="checkbox" id="autoAcceptCb">
                             <span class="checkbox-custom"></span>
-                            Auto-accept when quality is met
+                            质量达标时自动接受
                         </label>
                     </div>
                     <div class="checkbox-group">
-                        <label class="checkbox-label">
+                        <label class="checkbox-label" for="showIntermediateCb">
                             <input type="checkbox" id="showIntermediateCb" checked>
                             <span class="checkbox-custom"></span>
-                            Show intermediate results
+                            显示中间结果
                         </label>
                     </div>
                 </div>
                 <div class="settings-actions">
-                    <button class="btn btn-primary" id="applySettingsBtn">Apply</button>
-                    <button class="btn btn-secondary" id="resetSettingsBtn">Reset</button>
+                    <button class="btn btn-primary" id="applySettingsBtn">应用</button>
+                    <button class="btn btn-secondary" id="resetSettingsBtn">重置</button>
                 </div>
             </div>
         </div>
@@ -200,28 +182,30 @@
                     <i class="fa-solid fa-chevron-left"></i>
                 </button>
                 <div class="viewer-image-wrapper">
-                    <img id="viewerImage" src="" alt="Generated image">
+                    <img id="viewerImage" src="" alt="">
                 </div>
                 <button class="viewer-nav next" id="viewerNext">
                     <i class="fa-solid fa-chevron-right"></i>
                 </button>
                 <div class="viewer-info" id="viewerInfo">
                     <span id="viewerIndex">1/1</span>
-                    <span id="viewerSeed">Seed: -</span>
+                    <span id="viewerSeed">种子: -</span>
                 </div>
             </div>
         </div>
     </div>
 
     <script src="js/app.js"></script>
+    <script src="js/i18n.js"></script>
     <script src="js/api.js"></script>
     <script src="js/renderer.js"></script>
     <script src="js/events.js"></script>
     <script src="js/viewer.js"></script>
     <script>
-        // UI Initialization — wires DOM elements to AppActions and event handlers
         document.addEventListener('DOMContentLoaded', () => {
             AppState.init();
+            I18n.init();
+            Renderer.refreshI18n();
             updateSettingsUI();
 
             const els = {
@@ -235,6 +219,7 @@
                 sendButton: document.getElementById('sendButton'),
                 promptInput: document.getElementById('promptInput'),
                 clearChatBtn: document.getElementById('clearChatBtn'),
+                langToggle: document.getElementById('langToggle'),
                 acceptBtn: document.getElementById('acceptBtn'),
                 steerBtn: document.getElementById('steerBtn'),
                 pauseBtn: document.getElementById('pauseBtn'),
@@ -262,79 +247,56 @@
             }
 
             els.sidebarToggle.addEventListener('click', toggleSidebar);
-            els.sidebarToggleMobile.addEventListener('click', () => {
-                els.sidebar.classList.toggle('mobile-open');
-            });
-
+            els.sidebarToggleMobile.addEventListener('click', () => els.sidebar.classList.toggle('mobile-open'));
             els.settingsBtn.addEventListener('click', () => els.settingsPanel.classList.add('active'));
             els.settingsClose.addEventListener('click', () => els.settingsPanel.classList.remove('active'));
             els.newSessionBtn.addEventListener('click', () => AppActions.newSession());
 
             els.sendButton.addEventListener('click', () => AppActions.sendMessage());
             els.promptInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault();
-                    AppActions.sendMessage();
-                }
-                setTimeout(() => {
-                    els.promptInput.style.height = 'auto';
-                    els.promptInput.style.height = Math.min(els.promptInput.scrollHeight, 120) + 'px';
-                }, 0);
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); AppActions.sendMessage(); }
+                setTimeout(() => { els.promptInput.style.height = 'auto'; els.promptInput.style.height = Math.min(els.promptInput.scrollHeight, 120) + 'px'; }, 0);
             });
 
             els.clearChatBtn.addEventListener('click', () => {
-                if (confirm('Clear current chat?')) {
-                    Renderer.clearMessages();
-                    AppState.messages = [];
-                }
+                if (confirm(_t('clearConfirm'))) { Renderer.clearMessages(); AppState.messages = []; }
+            });
+
+            // Language toggle
+            els.langToggle.addEventListener('click', () => {
+                I18n.toggleLang();
+                Renderer.refreshI18n();
+                Renderer.renderWelcome();
+                Renderer.showToast(I18n.getLang() === 'zh-CN' ? '已切换为中文' : 'Switched to English', 'info');
+                // Re-bind suggestion chips
+                document.querySelectorAll('.suggestion-chip').forEach(chip => {
+                    chip.addEventListener('click', () => {
+                        document.getElementById('promptInput').value = chip.textContent;
+                        AppActions.sendMessage();
+                    });
+                });
             });
 
             els.acceptBtn.addEventListener('click', () => AppActions.acceptCurrent());
             els.steerBtn.addEventListener('click', () => AppActions.steer());
             els.pauseBtn.addEventListener('click', () => AppActions.pauseResume());
-
             els.settingsApply.addEventListener('click', () => AppActions.applySettings());
             els.settingsReset.addEventListener('click', () => AppActions.resetSettings());
 
             els.viewerClose.addEventListener('click', () => Viewer.close());
-            els.viewerOverlay.addEventListener('click', (e) => {
-                if (e.target === els.viewerOverlay) Viewer.close();
-            });
+            els.viewerOverlay.addEventListener('click', (e) => { if (e.target === els.viewerOverlay) Viewer.close(); });
             els.viewerPrev.addEventListener('click', () => Viewer.prev());
             els.viewerNext.addEventListener('click', () => Viewer.next());
+            els.randomSeedBtn.addEventListener('click', () => { els.seedInput.value = Math.floor(Math.random() * 1000000); });
 
-            els.randomSeedBtn.addEventListener('click', () => {
-                els.seedInput.value = Math.floor(Math.random() * 1000000);
-            });
-
-            // Slider value display updates
-            const sliderPairs = [
-                [els.widthSlider, 'widthValue'],
-                [els.heightSlider, 'heightValue'],
-                [els.countSlider, 'countValue'],
-                [els.stepsSlider, 'stepsValue'],
-                [els.guidanceSlider, 'guidanceValue'],
-                [els.maxIterSlider, 'maxIterValue'],
-            ];
-            sliderPairs.forEach(([slider, displayId]) => {
-                slider.addEventListener('input', () => {
-                    document.getElementById(displayId).textContent = slider.value;
-                });
-            });
+            const sliderPairs = [[els.widthSlider,'widthValue'],[els.heightSlider,'heightValue'],[els.countSlider,'countValue'],[els.stepsSlider,'stepsValue'],[els.guidanceSlider,'guidanceValue'],[els.maxIterSlider,'maxIterValue']];
+            sliderPairs.forEach(([slider, displayId]) => slider.addEventListener('input', () => document.getElementById(displayId).textContent = slider.value));
             els.seedInput.addEventListener('input', () => {
                 const v = els.seedInput.value;
-                document.getElementById('seedValue').textContent = v === '-1' ? '-1 (random)' : v;
+                document.getElementById('seedValue').textContent = v === '-1' ? '-1 (' + _t('labelRandom') + ')' : v;
             });
 
-            // Suggestion chip clicks
-            document.querySelectorAll('.suggestion-chip').forEach(chip => {
-                chip.addEventListener('click', () => {
-                    els.promptInput.value = chip.textContent;
-                    AppActions.sendMessage();
-                });
-            });
-
-            // Initial session load
+            document.querySelectorAll('.suggestion-chip').forEach(chip => chip.addEventListener('click', () => { els.promptInput.value = chip.textContent; AppActions.sendMessage(); }));
             AppActions.refreshSessions();
         });
     </script>
