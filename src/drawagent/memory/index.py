@@ -153,9 +153,13 @@ class MemoryIndex:
         if content is None:
             entries = [e for e in entries if e.category != category]
         else:
+            title = category.split("/")[-1].replace("_", " ").title()
+            match = re.search(r"^#\s+(.+)", content, re.MULTILINE)
+            if match:
+                title = match.group(1).strip()
             new_entry = IndexEntry(
                 category=category,
-                title=category.split("/")[-1].replace("_", " ").title(),
+                title=title,
                 tags=self._extract_tags(content),
                 entry_count=content.count("## ") or 1,
                 last_updated=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

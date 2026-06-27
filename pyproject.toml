@@ -24,12 +24,20 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24.0",
+    "httpx2>=0.1.0",
     "ruff>=0.4.0",
     "pyright>=1.1.0",
 ]
 
 [project.scripts]
 drawagent = "drawagent.main:main"
+
+[tool.setuptools]
+packages = ["drawagent"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
 
 [build-system]
 requires = ["hatchling"]
