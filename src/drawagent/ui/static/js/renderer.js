@@ -183,7 +183,7 @@ const Renderer = {
         if (sections[1]) sections[1].childNodes[1].textContent = ' ' + _t('sectionQuality');
         document.querySelector('[for="stepsSlider"] span:first-child').textContent = _t('labelSteps');
         document.querySelector('[for="guidanceSlider"] span:first-child').textContent = _t('labelGuidance');
-        document.querySelector('[for="seedInput"]').textContent = _t('labelSeed');
+        document.querySelector('[for="seedInput"] span:first-child').textContent = _t('labelSeed');
         if (sections[2]) sections[2].childNodes[1].textContent = ' ' + _t('sectionAgent');
         document.querySelector('[for="maxIterSlider"] span:first-child').textContent = _t('labelMaxIter');
         document.querySelector('[for="autoAcceptCb"]').parentElement.childNodes[2].textContent = _t('labelAutoAccept');

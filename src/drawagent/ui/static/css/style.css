@@ -92,7 +92,11 @@ body {
 .session-delete:hover { color:var(--error); background:rgba(239,68,68,0.1); }
 .sidebar.collapsed .session-info, .sidebar.collapsed .session-delete,
 .sidebar.collapsed .sidebar-footer span { display:none; }
-.sidebar-footer {
+.sidebar.collapsed .logo-text { display:none; }
+.sidebar.collapsed .sidebar-header { justify-content:center; padding:20px 8px; }
+.sidebar-toggle { flex-shrink:0; }
+.sidebar-toggle-mobile { display:none; }
+.sidebar-collapsed .sidebar-toggle-mobile { display:block; }
     padding:16px; border-top:1px solid var(--border);
     display:flex; flex-direction:column; gap:10px;
 }
@@ -427,9 +431,10 @@ body {
 
 /* Responsive */
 @media (max-width:768px) {
-    .sidebar { position:fixed; left:-300px; height:100vh; transition:left 0.3s; }
+    .sidebar { position:fixed; left:-300px; height:100vh; transition:left 0.3s; z-index:100; }
     .sidebar.mobile-open { left:0; }
-    .sidebar-toggle-mobile { display:block; }
+    .sidebar-toggle-mobile { display:block !important; }
+    body.sidebar-collapsed .sidebar-toggle-mobile { display:block !important; }
     .settings-panel { width:100%; right:-100%; }
     .viewer-nav.prev { left:8px; }
     .viewer-nav.next { right:8px; }

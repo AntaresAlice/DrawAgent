@@ -241,21 +241,20 @@
 
             function toggleSidebar() {
                 els.sidebar.classList.toggle('collapsed');
+                document.body.classList.toggle('sidebar-collapsed');
                 const icon = els.sidebarToggle.querySelector('i');
                 icon.classList.toggle('fa-chevron-left');
                 icon.classList.toggle('fa-chevron-right');
             }
 
             els.sidebarToggle.addEventListener('click', toggleSidebar);
-            els.sidebarToggleMobile.addEventListener('click', () => els.sidebar.classList.toggle('mobile-open'));
-            els.settingsBtn.addEventListener('click', () => els.settingsPanel.classList.add('active'));
-            els.settingsClose.addEventListener('click', () => els.settingsPanel.classList.remove('active'));
-            els.newSessionBtn.addEventListener('click', () => AppActions.newSession());
-
-            els.sendButton.addEventListener('click', () => AppActions.sendMessage());
-            els.promptInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); AppActions.sendMessage(); }
-                setTimeout(() => { els.promptInput.style.height = 'auto'; els.promptInput.style.height = Math.min(els.promptInput.scrollHeight, 120) + 'px'; }, 0);
+            // sidebarToggleMobile expands sidebar when it's collapsed (both mobile and desktop)
+            els.sidebarToggleMobile.addEventListener('click', () => {
+                if (els.sidebar.classList.contains('collapsed')) {
+                    toggleSidebar();
+                } else {
+                    els.sidebar.classList.toggle('mobile-open');
+                }
             });
 
             els.clearChatBtn.addEventListener('click', () => {
