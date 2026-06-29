@@ -81,6 +81,7 @@ class InnerLoop:
         initial_prompt: str,
         start_iteration: int = 0,
         step_mode: bool | None = None,
+        step_limit: int | None = None,
     ) -> LoopResult:
         """Execute the inner loop until termination.
 
@@ -88,8 +89,12 @@ class InnerLoop:
             initial_prompt: The user's request text
             start_iteration: For resume — iteration to start from (0 = from beginning)
             step_mode: Override config.step_mode for this run (None = use config default)
+            step_limit: Max iterations to execute in this run (None = unlimited).
+                        When set, the loop stops gracefully after step_limit iterations,
+                        regardless of quality. Used by non-interactive debug mode.
         """
         _step_mode = step_mode if step_mode is not None else self.config.step_mode
+        _steps_done = 0
         iteration = start_iteration
         current_prompt = initial_prompt
 
@@ -385,6 +390,21 @@ class InnerLoop:
                 tasks=inspection_results,
                 decision=decision,
             ))
+
+            # ── Step limit check (non-interactive debug mode) ──
+            _steps_done += 1
+            if step_limit is not None and _steps_done >= step_limit:
+                await self.events.emit(
+                    DrawEvent.LOOP_TERMINATED,
+                    reason="step_limit_reached",
+                    session_id=self.session.id,
+                )
+                return LoopResult(
+                    terminated_reason="step_limit_reached",
+                    final_images=images,
+                    iterations_completed=iteration,
+                    session_id=self.session.id,
+                )
 
             if decision.passed:
                 if decision.recommendation == "ask_user":

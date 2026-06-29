@@ -2,7 +2,31 @@
 
 ## Changelog
 
-### 2026-06-29 — Session Resume + Step-by-Step Execution
+### 2026-06-29 — Non-interactive debug mode + --config flag
+**新增功能：非交互式调试模式 (drawagent run)**
+
+- `run` 子命令重新设计为 gdb 风格调试工具：
+  - `--steps N`: 精确控制执行多少轮迭代（0=全部）
+    - 新 session 默认执行全部；resume 默认执行 1 步（调试模式）
+  - `--from-iteration N`: 从第 N 轮开始（0=最后完成轮）
+  - `--fork`: 从现有 session fork 出新 session，原 session 不受影响
+  - `--user-input TEXT`: 在当前迭代注入用户指令
+    - 通过 `session.pending_action="steer"` + `session.steer_message` 实现
+    - Loop 在下一轮开始前检测并替换 current_prompt
+    - Agent A 基于新指令 + 历史观察 refine 提示词
+  - `--steps-param`: 扩散步数（区别于执行步数 --steps）
+
+- `--config PATH` 标志：
+  - 三个命令 (serve/cli/run) 都支持
+  - ConfigLoader.load(config_file=path) 新增参数，作为最高优先级 YAML 层
+  - `run` 命令的 CLI flags 覆盖优先级最高（覆盖 config 文件所有值）
+
+- **关键变量/接口**:
+  - `InnerLoop.run(step_limit=N)`: 新增步数限制参数
+  - `ConfigLoader.load(config_file=PATH)`: 新增显式配置文件支持
+  - `_apply_run_overrides(args, config)`: CLI flags → AppConfig 映射
+
+- **测试**: test_config.py +2, test_providers.py (修复 steps→steps_param)
 **新增功能：断点续传 & 单步执行**
 
 - **Session Resume (断点继续)**: CLI 支持 `--resume <session_id>` 从数据库恢复未完成的 session 继续执行

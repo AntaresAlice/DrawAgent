@@ -39,8 +39,8 @@ def main():
     cli_p.add_argument("--db", type=str, default=None,
                        help="Enable session persistence to SQLite DB path")
 
-    # run (non-interactive, one-shot)
-    run_p = sub.add_parser("run", help="Non-interactive one-shot generation")
+    # run (non-interactive, debug-first one-shot)
+    run_p = sub.add_parser("run", help="Non-interactive one-shot generation (debug mode)")
     run_p.add_argument("prompt", nargs="?", default=None, help="The image generation request")
     run_p.add_argument("--prompt", type=str, default=None, dest="prompt_text",
                        help="Prompt text (alternative to positional)")
@@ -48,45 +48,43 @@ def main():
                        help="Negative prompt")
     run_p.add_argument("--output-dir", type=str, default="./outputs")
     run_p.add_argument("--config", type=str, default=None, metavar="PATH",
-                       help="Path to config YAML file (highest priority overrides)")
+                       help="Path to config YAML file")
     run_p.add_argument("--db", type=str, default=None,
-                       help="SQLite database path for session persistence")
+                       help="SQLite database path (required for --resume/--fork)")
+    # Execution control
     run_p.add_argument("--resume", type=str, default=None, metavar="SESSION_ID",
-                       help="Resume a session from the database instead of creating new")
+                       help="Resume a session from the database")
     run_p.add_argument("--from-iteration", type=int, default=0, metavar="N",
-                       help="Start from iteration N when resuming")
-    run_p.add_argument("--rerun-last", action="store_true",
-                       help="When resuming, re-run the last completed iteration")
+                       help="Start from iteration N (0=skip none; -1=last completed, the default for resume)")
+    run_p.add_argument("--steps", type=int, default=None, metavar="N",
+                       help="Iterations to execute (default: all for new session, 1 for resume, 0=unlimited)")
+    run_p.add_argument("--fork", action="store_true",
+                       help="Fork a new session instead of modifying the original")
+    run_p.add_argument("--user-input", type=str, default=None, dest="user_input", metavar="TEXT",
+                       help="Inject a steering instruction at the current iteration")
     # Generation params
     run_p.add_argument("--max-iterations", type=int, default=None, metavar="N",
                        help="Maximum iterations (overrides config)")
-    run_p.add_argument("--width", type=int, default=None, metavar="PX",
-                       help="Image width in pixels (512-2048)")
-    run_p.add_argument("--height", type=int, default=None, metavar="PX",
-                       help="Image height in pixels (512-2048)")
-    run_p.add_argument("--steps", type=int, default=None, metavar="N",
+    run_p.add_argument("--width", type=int, default=None, metavar="PX")
+    run_p.add_argument("--height", type=int, default=None, metavar="PX")
+    run_p.add_argument("--steps-param", type=int, default=None, dest="steps_param", metavar="N",
                        help="Diffusion inference steps (1-50)")
-    run_p.add_argument("--guidance", type=float, default=None, metavar="N",
-                       help="CFG guidance scale (0.0-20.0)")
-    run_p.add_argument("--seed", type=int, default=None, metavar="N",
-                       help="Random seed (-1 for random)")
-    run_p.add_argument("--num-images", type=int, default=None, metavar="N",
-                       help="Images per iteration (1-4)")
+    run_p.add_argument("--guidance", type=float, default=None, metavar="N")
+    run_p.add_argument("--seed", type=int, default=None, metavar="N")
+    run_p.add_argument("--num-images", type=int, default=None, metavar="N")
     # Agent overrides
-    run_p.add_argument("--model-a", type=str, default=None, help="Agent A model name")
-    run_p.add_argument("--api-key-a", type=str, default=None, help="Agent A API key")
-    run_p.add_argument("--api-base-a", type=str, default=None, help="Agent A API base URL")
-    run_p.add_argument("--temperature-a", type=float, default=None, help="Agent A temperature")
-    run_p.add_argument("--model-c", type=str, default=None, help="Agent C model name")
-    run_p.add_argument("--api-key-c", type=str, default=None, help="Agent C API key")
-    run_p.add_argument("--api-base-c", type=str, default=None, help="Agent C API base URL")
-    run_p.add_argument("--temperature-c", type=float, default=None, help="Agent C temperature")
-    run_p.add_argument("--agent-b-type", type=str, default=None, choices=["http", "mcp"],
-                       help="Agent B backend type")
-    run_p.add_argument("--agent-b-url", type=str, default=None, help="Agent B API base URL")
-    run_p.add_argument("--agent-b-endpoint", type=str, default=None, help="Agent B API endpoint")
-    run_p.add_argument("--mcp-command", type=str, default=None,
-                       help="Agent B MCP command (e.g. 'python mcp_server.py')")
+    run_p.add_argument("--model-a", type=str, default=None)
+    run_p.add_argument("--api-key-a", type=str, default=None)
+    run_p.add_argument("--api-base-a", type=str, default=None)
+    run_p.add_argument("--temperature-a", type=float, default=None)
+    run_p.add_argument("--model-c", type=str, default=None)
+    run_p.add_argument("--api-key-c", type=str, default=None)
+    run_p.add_argument("--api-base-c", type=str, default=None)
+    run_p.add_argument("--temperature-c", type=float, default=None)
+    run_p.add_argument("--agent-b-type", type=str, default=None, choices=["http", "mcp"])
+    run_p.add_argument("--agent-b-url", type=str, default=None)
+    run_p.add_argument("--agent-b-endpoint", type=str, default=None)
+    run_p.add_argument("--mcp-command", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -445,18 +443,17 @@ async def run_cli(args):
 
 
 async def run_cli_noninteractive(args):
-    """Non-interactive one-shot generation mode."""
+    """Non-interactive one-shot generation (debug mode)."""
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
     from datetime import datetime
 
     from drawagent.config.loader import ConfigLoader
     from drawagent.core.events import DrawEvent, EventBus
-    from drawagent.core.types import Session
+    from drawagent.core.types import Session, Iteration, QualityDecision
     from drawagent.orchestrator.interrupt import InterruptHandler
     from drawagent.orchestrator.session import SessionManager
     from drawagent.agents.agent_a import AgentA
-    from drawagent.config.schema import AgentBConfig, LoopConfig
     from drawagent.context.assembler import ContextAssembler
     from drawagent.providers.factory import ProviderFactory
     from drawagent.tools.base import ToolRegistry
@@ -464,13 +461,9 @@ async def run_cli_noninteractive(args):
     from drawagent.tools.inspect_image import InspectImageTool
     from drawagent.persistence.database import Database
 
-    # Load config
     config = await ConfigLoader.load(Path.cwd(), config_file=args.config)
-
-    # Apply CLI overrides to config
     _apply_run_overrides(args, config)
 
-    # Optional DB
     db = None
     if args.db or args.resume:
         db_path = args.db or "~/.drawagent/sessions.db"
@@ -481,19 +474,39 @@ async def run_cli_noninteractive(args):
     interrupt_handler = InterruptHandler()
     event_bus = EventBus()
 
-    # Minimal event listeners
+    # Event output
+    async def on_iter_start(evt_type, data):
+        print(f"  >>> Iteration {data.get('iteration', '?')} started")
+    async def on_gen_start(evt_type, data):
+        print(f"  [Generate] Calling Agent B...")
+    async def on_images_ready(evt_type, data):
+        for img in data.get("images", []):
+            print(f"  [Image] {img.filename} (seed={img.seed}, {img.width}x{img.height})")
+    async def on_inspect_done(evt_type, data):
+        task = data.get("task", "?")
+        result = data.get("result")
+        passed = result.passed if result else False
+        print(f"  [Inspect {'PASS' if passed else 'FAIL'}] {task}")
+    async def on_quality(evt_type, data):
+        d = data.get("decision")
+        if d:
+            icon = "[PASS]" if d.passed else "[FAIL]"
+            print(f"  [Quality {icon}] {d.reasoning[:150]}")
     async def on_error(evt_type, data):
-        print(f"Error: {data.get('message', 'unknown')}", file=sys.stderr)
+        print(f"  Error: {data.get('message', 'unknown')}", file=sys.stderr)
 
+    event_bus.on(DrawEvent.ITERATION_STARTED, on_iter_start)
+    event_bus.on(DrawEvent.GENERATION_STARTED, on_gen_start)
+    event_bus.on(DrawEvent.IMAGES_READY, on_images_ready)
+    event_bus.on(DrawEvent.INSPECTION_TASK_DONE, on_inspect_done)
+    event_bus.on(DrawEvent.QUALITY_DECISION, on_quality)
     event_bus.on(DrawEvent.ERROR, on_error)
 
-    # Create providers
     try:
         provider_a = ProviderFactory.create_agent_a(config.agent_a)
         provider_c = ProviderFactory.create_agent_c(config.agent_c)
     except Exception as e:
         print(f"Failed to create providers: {e}", file=sys.stderr)
-        print("Set OPENAI_API_KEY or use --api-key-a / --api-key-c", file=sys.stderr)
         sys.exit(1)
 
     registry = ToolRegistry()
@@ -502,8 +515,10 @@ async def run_cli_noninteractive(args):
     registry.register(gen_tool)
     registry.register(inspect_tool)
 
-    # Session
+    # ── Session resolution ──
+    original_session_id = None
     start_iteration = 0
+    step_limit = args.steps
     prompt = args.prompt_text or args.prompt or ""
 
     if args.resume:
@@ -512,23 +527,56 @@ async def run_cli_noninteractive(args):
             sys.exit(1)
         session = await session_mgr.load_session(args.resume)
         if session is None:
-            print(f"Session {args.resume} not found", file=sys.stderr)
+            print(f"Session {args.resume} not found in database", file=sys.stderr)
+            # List available
+            all_s = await session_mgr.load_all()
+            if all_s:
+                print("Available sessions:")
+                for s in all_s:
+                    print(f"  {s.id[:16]}... | {s.user_request[:40]}... | {len(s.iterations)} iters")
             sys.exit(1)
 
+        original_session_id = session.id
+
+        # --from-iteration: 0=auto(resume from last), -1=same as 0, N=from N
         if args.from_iteration > 0:
             start_iteration = args.from_iteration
             session.iterations = session.iterations[:start_iteration]
-        elif args.rerun_last and session.iterations:
-            start_iteration = max(0, len(session.iterations) - 1)
-            session.iterations = session.iterations[:start_iteration]
-        else:
-            start_iteration = len(session.iterations)
+        elif args.from_iteration == 0:
+            start_iteration = len(session.iterations)  # last completed
 
         if not prompt:
             prompt = session.user_request
+
+        # --fork: copy session state to new session
+        if args.fork:
+            fork_id = f"fork-{session.id[:12]}-{datetime.now().strftime('%H%M%S')}"
+            forked = Session(
+                id=fork_id,
+                user_request=session.user_request,
+                max_iterations=session.max_iterations,
+            )
+            forked.iterations = list(session.iterations)
+            session = forked
+            if db:
+                await session_mgr.persist_session(session)
+                for it in session.iterations:
+                    await session_mgr.add_iteration(session, it)
+            print(f"Forked session: {fork_id}")
+            print(f"  Parent: {original_session_id[:16]}...")
+
+        # --user-input: inject steering instruction
+        if args.user_input:
+            session.pending_action = "steer"
+            session.steer_message = args.user_input
+            print(f"User input: \"{args.user_input[:80]}\"")
+
+        # Default step_limit for resume: 1 step (debug mode)
+        if step_limit is None:
+            step_limit = 1
     else:
         if not prompt:
-            print("Error: prompt is required. Usage: drawagent run 'your prompt'", file=sys.stderr)
+            print("Error: prompt required. Usage: drawagent run 'your prompt'", file=sys.stderr)
             sys.exit(1)
         session = Session(
             id=f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
@@ -538,6 +586,11 @@ async def run_cli_noninteractive(args):
         if db:
             await session_mgr.persist_session(session)
 
+    # --steps 0 means unlimited
+    if step_limit == 0:
+        step_limit = None
+
+    # ── Run ──
     agent_a = AgentA(provider=provider_a, tool_registry=registry, session=session)
     assembler = ContextAssembler(agent_b_config=config.agent_b)
 
@@ -554,16 +607,23 @@ async def run_cli_noninteractive(args):
         config=config.loop,
     )
 
-    print(f"Generating: \"{prompt[:80]}{'...' if len(prompt)>80 else ''}\"")
+    if start_iteration > 0:
+        loop.reconstruct_state()
+
+    print(f"Session: {session.id[:16]}...")
+    print(f"Prompt:  \"{prompt[:80]}{'...' if len(prompt)>80 else ''}\"")
     print(f"  Agent A: {config.agent_a.model} @ {config.agent_a.api_base}")
     print(f"  Agent B: {config.agent_b.type} @ {config.agent_b.api_base}{config.agent_b.endpoint}")
     print(f"  Agent C: {config.agent_c.model} @ {config.agent_c.api_base}")
-    if start_iteration > 0:
-        print(f"  Resume: iteration {start_iteration + 1}")
-    print(f"  Max iterations: {config.loop.max_iterations}")
     gen = config.agent_b.default_params
     print(f"  Image: {gen.get('width', 1024)}x{gen.get('height', 1024)}, "
           f"steps={gen.get('steps', 8)}, guidance={gen.get('guidance', 3.5)}")
+    if start_iteration > 0:
+        print(f"  Start:  iteration {start_iteration}")
+    if step_limit is not None:
+        print(f"  Steps:  {step_limit} iteration(s)")
+    else:
+        print(f"  Steps:  until termination (max {config.loop.max_iterations})")
     print("-" * 50)
 
     try:
@@ -571,15 +631,18 @@ async def run_cli_noninteractive(args):
             initial_prompt=prompt,
             start_iteration=start_iteration,
             step_mode=False,
+            step_limit=step_limit,
         )
-        print(f"Result: {result.terminated_reason}")
-        print(f"Iterations: {result.iterations_completed}")
+        print(f"\nResult: {result.terminated_reason}")
+        print(f"Iterations completed: {result.iterations_completed}")
         if result.final_images:
             print("Images:")
             for img in result.final_images:
                 print(f"  {img.path}")
         else:
             print("No images generated.")
+        if session.id != original_session_id:
+            print(f"Session: {session.id}")
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         import traceback
@@ -600,8 +663,8 @@ def _apply_run_overrides(args, config):
         gen["width"] = args.width
     if args.height is not None:
         gen["height"] = args.height
-    if args.steps is not None:
-        gen["steps"] = args.steps
+    if args.steps_param is not None:
+        gen["steps"] = args.steps_param
     if args.guidance is not None:
         gen["guidance"] = args.guidance
     if args.seed is not None:

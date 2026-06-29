@@ -31,120 +31,111 @@ drawagent run "a cat" --config my_config.yaml
 
 ---
 
-## 一、`drawagent run` — 非交互式一次性生成
+## 一、`drawagent run` — 非交互式单步/多步执行（调试核心）
 
-接收提示词和参数，自动完成"解析→生成→检查→评估→输出"全流程后退出。
-适合脚本、CI/CD、批量生成。
+设计目标：类似 gdb 的调试体验，可以精确控制从哪个 session 的哪一步开始，
+执行多少步，注入用户指令，fork 出新 session。
 
 ### 基本用法
 
 ```bash
-drawagent run "a beautiful sunset over mountains"
+# 新 session，执行直到终止
+drawagent run "a beautiful sunset"
+
+# 新 session，只执行 1 步
+drawagent run "a beautiful sunset" --steps 1
+
+# 恢复 session，执行 1 步（debug 默认）
+drawagent run --db ~/.drawagent/debug.db --resume <session_id>
+
+# 恢复并从指定迭代开始，执行 3 步
+drawagent run --db ~/.drawagent/debug.db --resume <id> --from-iteration 2 --steps 3
 ```
 
-### 所有参数
-
-#### 提示词
-
-| 参数 | 说明 |
-|------|------|
-| `prompt` (位置参数) | 生成需求文本 |
-| `--prompt TEXT` | 同上（显式方式，脚本友好） |
-| `--negative-prompt TEXT` | 负面提示词 |
-
-#### 通用
+### 执行控制参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `--config PATH` | 自动发现 | 配置文件路径 |
-| `--output-dir PATH` | ./outputs | 图片输出目录 |
-| `--db PATH` | 不启用 | SQLite 数据库路径 |
+| `--steps N` | 新 session=全部, resume=1 | 执行 N 轮迭代后停止（0=全部） |
+| `--from-iteration N` | 0=最后完成 | 从第 N 轮开始（跳过前 N-1 轮） |
+| `--fork` | false | Fork 出新 session，不修改原 session |
+| `--user-input TEXT` | 无 | 在当前迭代注入用户指令（LLM 会重新解析） |
 
-#### 恢复
+### 完整参数列表
 
-| 参数 | 说明 |
-|------|------|
-| `--resume SESSION_ID` | 从数据库恢复指定 session |
-| `--from-iteration N` | 从第 N 轮开始（0=自动从最后继续） |
-| `--rerun-last` | 重新执行最后一轮 |
+见 `drawagent run --help`。包含以上执行控制参数，以及：
+- 基础参数：`--config`, `--db`, `--output-dir`
+- 恢复参数：`--resume`
+- 生成参数：`--width`, `--height`, `--steps-param`, `--guidance`, `--seed`, `--num-images`, `--max-iterations`, `--negative-prompt`
+- Agent 参数：`--model-a/c`, `--api-key-a/c`, `--api-base-a/c`, `--temperature-a/c`, `--agent-b-type/url/endpoint`, `--mcp-command`
 
-#### 生成参数（覆盖配置文件）
+> 注意：扩散步数用 `--steps-param`（区别于执行步数的 `--steps`）
 
-| 参数 | 默认 | 范围 |
-|------|------|------|
-| `--max-iterations N` | 7 | 1-20 |
-| `--width PX` | 1024 | 512-2048 |
-| `--height PX` | 1024 | 512-2048 |
-| `--steps N` | 8 | 1-50 |
-| `--guidance N` | 3.5 | 0-20 |
-| `--seed N` | -1 | -1=随机 |
-| `--num-images N` | 2 | 1-4 |
-
-#### Agent 参数（覆盖配置文件）
-
-| 参数 | 对应字段 |
-|------|---------|
-| `--model-a TEXT` | agent_a.model |
-| `--api-key-a TEXT` | agent_a.api_key |
-| `--api-base-a URL` | agent_a.api_base |
-| `--temperature-a N` | agent_a.temperature |
-| `--model-c TEXT` | agent_c.model |
-| `--api-key-c TEXT` | agent_c.api_key |
-| `--api-base-c URL` | agent_c.api_base |
-| `--temperature-c N` | agent_c.temperature |
-| `--agent-b-type http\|mcp` | agent_b.type |
-| `--agent-b-url URL` | agent_b.api_base |
-| `--agent-b-endpoint PATH` | agent_b.endpoint |
-| `--mcp-command TEXT` | agent_b.mcp_command |
-
-### 示例
+### 典型调试工作流
 
 ```bash
-# 最简单
-drawagent run "a cat sitting on a windowsill"
+# 1. 持久化生成一次
+drawagent run "a warrior princess portrait" --db debug.db
+# 输出: Session: run-20260629-...
 
-# 使用 DeepSeek（命令行覆盖所有配置）
-drawagent run "a cat" \
-  --api-key-a sk-deepseek-xxx \
-  --api-base-a https://api.deepseek.com/v1 \
-  --model-a deepseek-chat \
-  --api-key-c sk-deepseek-xxx \
-  --api-base-c https://api.deepseek.com/v1 \
-  --model-c deepseek-chat \
-  --width 512 --height 512 --steps 4 --max-iterations 2
+# 2. 回到第1轮，注入新指令，看 LLM 如何调整
+drawagent run --db debug.db --resume run-20260629-... \
+  --from-iteration 1 --user-input "make armor more ornate" --steps 1
 
-# 使用配置文件 + 命令行覆盖部分
-drawagent run "a cat" --config deepseek.yaml --width 768
+# 3. Fork 一个新 session，基于旧 session 的第 2 轮开始探索
+drawagent run --db debug.db --resume run-20260629-... \
+  --from-iteration 2 --fork --user-input "change to nighttime scene" --steps 2
 
-# 恢复未完成的 session
-drawagent run --db ~/.drawagent/debug.db --resume cli-20260629-153022
-
-# 从特定轮恢复
-drawagent run --db ~/.drawagent/debug.db --resume <id> --from-iteration 3
-
-# 脚本批量生成
-for prompt in "a red car" "a blue sky" "a green forest"; do
-    drawagent run "$prompt" --output-dir ./batch --max-iterations 2
-done
+# 4. 在 fork 的 session 上继续
+drawagent run --db debug.db --resume fork-run-2026... --steps 1
 ```
 
-### 输出格式
+### `--user-input` 工作原理
 
 ```
-Generating: "a cat sitting on a windowsill"
-  Agent A: gpt-4o @ https://api.openai.com/v1
-  Agent B: http @ http://localhost:8000/api/generate
-  Agent C: gpt-4o @ https://api.openai.com/v1
-  Max iterations: 7
-  Image: 1024x1024, steps=8, guidance=3.5
+drawagent run --db debug.db --resume <id> --user-input "make it darker"
+```
+
+1. 加载 session，设置 `session.pending_action = "steer"`
+2. 设置 `session.steer_message = "make it darker"`
+3. Loop 在下一轮迭代开始前检测到 steer 指令
+4. 将 `current_prompt` 替换为用户的新指令
+5. Agent A 基于新指令 + 历史观察结果，refine 提示词
+6. Agent B 用新提示词生成
+
+输出示例：
+```
+Session: run-20260629...
+Prompt:  "a warrior princess portrait"
+  Start:  iteration 2
+  Steps:  1 iteration(s)
+User input: "make it darker"
 --------------------------------------------------
-Result: quality_passed
-Iterations: 2
+  >>> Iteration 2 started
+  [Generate] Calling Agent B...
+  [Image] gen_xxx.png (seed=99, 1024x1024)
+  [Inspect PASS] check_lighting
+  [Quality PASS] Lighting improved, matches user request.
+  *** Loop ended: step_limit_reached ***
+
+Result: step_limit_reached
+Iterations completed: 2
 Images:
-  D:\Code\DrawAgent\outputs\gen_1719000001_02_43.png
+  D:\Code\DrawAgent\outputs\gen_xxx.png
 ```
 
-退出码：成功=0，失败=1
+### `--fork` 工作原理
+
+```
+drawagent run --db debug.db --resume <id> --fork --steps 1
+```
+
+1. 加载原始 session A，复制其 iterations
+2. 创建新 session B（ID: `fork-<A的ID前12位>-<时间戳>`）
+3. 将 B 持久化到数据库（A 不受影响）
+4. 对 B 执行生成
+
+这样可以在不破坏原始 session 的情况下探索不同方向。
 
 ---
 
@@ -278,15 +269,16 @@ drawagent serve --host 0.0.0.0 --port 8080
 
 | 维度 | `run` | `cli` |
 |------|-------|-------|
-| 交互方式 | 非交互，命令行参数 | 交互式 REPL |
-| 参数来源 | 命令行 flags | 配置文件 + 终端输入 |
-| 配置覆盖 | `--model-a` 等 14 个 flags | 通过配置文件 |
-| 持久化 | `--db` 可选 | `--db` 可选 |
-| 恢复 | `--resume` + `--from-iteration` | 同上 |
-| 步进 | 不支持 | `--step` |
+| 交互方式 | 非交互，命令即出 | REPL 逐行输入 |
+| 步进控制 | `--steps N` 精确控制迭代数 | `--step` 每轮暂停手动确认 |
+| 默认步数 | 新 session=全部, resume=1 | 全部 |
+| 迭代定位 | `--from-iteration N` | 无（需从开始） |
+| Fork | `--fork` 创建分支 session | 无 |
+| 注入指令 | `--user-input TEXT` 程序化注入 | `/steer msg` 手动输入 |
+| 详细输出 | 每轮事件打印 | 每轮事件打印 |
 | 批量/脚本 | ✓ | ✗ |
-| 调试/探索 | ✗ | ✓ |
-| 退出码 | 0/1 | N/A（交互式） |
+| 调试探索 | ✓（单步+注入+fork） | ✓（REPL 交互式） |
+| 退出码 | 0/1 | N/A |
 
 ---
 

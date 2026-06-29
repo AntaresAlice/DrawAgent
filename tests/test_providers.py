@@ -310,7 +310,7 @@ class TestRunModeOverrides:
         config.loop.max_iterations = 7
 
         args = MagicMock(
-            max_iterations=3, width=None, height=None, steps=None,
+            max_iterations=3, width=None, height=None, steps_param=None,
             guidance=None, seed=None,
             model_a=None, api_key_a=None, api_base_a=None, temperature_a=None,
             model_c=None, api_key_c=None, api_base_c=None, temperature_c=None,
@@ -326,7 +326,7 @@ class TestRunModeOverrides:
 
         config = AppConfig(agent_a=AgentAConfig(model="gpt-4o", api_key=None, api_base="https://openai.com/v1", temperature=0.7))
         args = MagicMock(
-            max_iterations=None, width=None, height=None, steps=None,
+            max_iterations=None, width=None, height=None, steps_param=None,
             guidance=None, seed=None,
             model_a="deepseek-chat", api_key_a="sk-test", api_base_a="https://deepseek.com/v1", temperature_a=0.5,
             model_c=None, api_key_c=None, api_base_c=None, temperature_c=None,
@@ -345,7 +345,7 @@ class TestRunModeOverrides:
 
         config = AppConfig()
         args = MagicMock(
-            max_iterations=None, width=512, height=768, steps=10,
+            max_iterations=None, width=512, height=768, steps_param=10,
             guidance=5.0, seed=12345,
             model_a=None, api_key_a=None, api_base_a=None, temperature_a=None,
             model_c=None, api_key_c=None, api_base_c=None, temperature_c=None,
@@ -366,7 +366,7 @@ class TestRunModeOverrides:
 
         config = AppConfig()
         args = MagicMock(
-            max_iterations=None, width=None, height=None, steps=None,
+            max_iterations=None, width=None, height=None, steps_param=None,
             guidance=None, seed=None,
             model_a=None, api_key_a=None, api_base_a=None, temperature_a=None,
             model_c=None, api_key_c=None, api_base_c=None, temperature_c=None,
@@ -383,7 +383,7 @@ class TestRunModeOverrides:
 
         config = AppConfig(agent_a=AgentAConfig(model="gpt-4o", temperature=0.7))
         args = MagicMock(
-            max_iterations=None, width=None, height=None, steps=None,
+            max_iterations=None, width=None, height=None, steps_param=None,
             guidance=None, seed=None,
             model_a=None, api_key_a=None, api_base_a=None, temperature_a=None,
             model_c=None, api_key_c=None, api_base_c=None, temperature_c=None,
