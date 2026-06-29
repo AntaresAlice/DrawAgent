@@ -1,9 +1,11 @@
 # High-quality generation preset — for final renders
 # Usage: drawagent run --gen-params gen_presets/high-quality.yaml "your prompt"
 
-width: 2048
-height: 2048
+width: 1280
+height: 1280
 steps: 30
-guidance: 5.0
+guidance: 7.0
+cfg_truncation: 0.6
+max_sequence_length: 512
 seed: -1
 num_images: 1

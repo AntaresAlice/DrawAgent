@@ -1,0 +1,11 @@
+# Portrait generation preset — optimised for character portraits
+# Usage: drawagent run --gen-params gen_presets/portrait.yaml "your prompt"
+
+width: 960
+height: 1280
+steps: 30
+guidance: 7.0
+cfg_truncation: 0.6
+max_sequence_length: 512
+seed: -1
+num_images: 4

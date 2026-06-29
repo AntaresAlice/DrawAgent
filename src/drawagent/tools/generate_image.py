@@ -68,6 +68,16 @@ class GenerateImageTool(BaseTool):
                 "description": "CFG guidance scale",
                 "default": 3.5,
             },
+            "cfg_truncation": {
+                "type": "number",
+                "description": "CFG truncation ratio (0-1), lower values reduce over-saturation",
+                "default": 1.0,
+            },
+            "max_sequence_length": {
+                "type": "integer",
+                "description": "Tokenizer max sequence length (128-1024)",
+                "default": 512,
+            },
         },
         "required": ["prompt"],
     }
@@ -112,6 +122,8 @@ class GenerateImageTool(BaseTool):
             "height": args.get("height", params.get("height", 1024)),
             "steps": args.get("steps", params.get("steps", 8)),
             "guidance": args.get("guidance", params.get("guidance", 3.5)),
+            "cfg_truncation": args.get("cfg_truncation", params.get("cfg_truncation", 1.0)),
+            "max_sequence_length": args.get("max_sequence_length", params.get("max_sequence_length", 512)),
         })
 
         seeds = []

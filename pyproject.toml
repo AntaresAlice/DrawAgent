@@ -38,6 +38,9 @@ packages = ["src/drawagent"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: real MCP/network tests (requires running services)",
+]
 
 [build-system]
 requires = ["hatchling"]

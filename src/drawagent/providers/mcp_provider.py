@@ -4,6 +4,9 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
+import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -23,7 +26,7 @@ class MCPProvider:
 
     def __init__(self, config: AgentBConfig):
         self.config = config
-        self._process: asyncio.subprocess.Process | None = None
+        self._process: subprocess.Popen | None = None
         self._http_client: httpx.AsyncClient | None = None
         self._tool_args_schema: dict | None = None
         self._initialized = False
@@ -43,42 +46,49 @@ class MCPProvider:
         if not cmd:
             raise ImageGenerationError("mcp_command is required for stdio MCP")
 
+        t0 = time.monotonic()
+        logger.info("[MCP] spawning subprocess: %s", cmd)
         env = os.environ.copy()
 
-        self._process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        # Use subprocess.Popen (not asyncio.create_subprocess_exec) for reliable
+        # Windows compatibility. stderr → DEVNULL to prevent pipe deadlock.
+        env["PYTHONIOENCODING"] = "utf-8"
+        self._process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             env=env,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
         )
+        logger.info("[MCP] subprocess spawned (pid=%s), elapsed=%.1fs",
+                     self._process.pid, time.monotonic() - t0)
 
         try:
+            logger.info("[MCP] sending initialize...")
             init_result = await self._send_json_rpc_stdio("initialize", {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
                 "clientInfo": {"name": "DrawAgent", "version": "0.2.0"},
             })
-            logger.info("MCP initialized: %s", init_result.get("serverInfo", {}))
+            logger.info("[MCP] handshake OK: %s", init_result.get("serverInfo", init_result))
 
             tools_result = await self._send_json_rpc_stdio("tools/list", {})
             tools = tools_result.get("tools", [])
-            tool_name = self.config.mcp_tool_name
+            logger.info("[MCP] tools discovered: %s", [t.get("name") for t in tools])
 
-            for tool in tools:
-                if tool.get("name") == tool_name:
-                    self._tool_args_schema = tool.get("inputSchema", {})
-                    break
-
-            if self._tool_args_schema is None:
-                available = [t.get("name") for t in tools]
+            tool = next((t for t in tools if t.get("name") == self.config.mcp_tool_name), None)
+            if tool is None:
+                names = [t.get("name") for t in tools]
                 raise ImageGenerationError(
-                    f"MCP tool '{tool_name}' not found. Available: {available}"
+                    f"MCP tool '{self.config.mcp_tool_name}' not found. Available: {names}"
                 )
 
+            self._tool_args_schema = tool.get("inputSchema", {})
             self._initialized = True
-            logger.info("MCP tool '%s' discovered", tool_name)
-
+            logger.info("[MCP] initialized successfully (elapsed=%.1fs)", time.monotonic() - t0)
         except Exception:
             if self._process:
                 self._process.kill()
@@ -129,14 +139,39 @@ class MCPProvider:
             "id": 1,
         })
 
-        self._process.stdin.write((request + "\n").encode())
-        await self._process.stdin.drain()
+        t_write = time.monotonic()
+        loop = asyncio.get_running_loop()
+        proc = self._process  # capture for thread safety
+        await loop.run_in_executor(
+            None,
+            lambda: (proc.stdin.write(request + "\n"), proc.stdin.flush()),
+        )
+        logger.debug("[MCP] wrote %s (%.2fs)", method, time.monotonic() - t_write)
 
-        line = await self._process.stdout.readline()
-        if not line:
-            raise ImageGenerationError("MCP server closed connection")
+        # Read response, skipping non-JSON startup noise
+        MAX_SKIP = 50
+        skipped = 0
+        for _ in range(MAX_SKIP):
+            t_read = time.monotonic()
+            line = await loop.run_in_executor(None, proc.stdout.readline)
+            elapsed = time.monotonic() - t_read
+            if not line:
+                raise ImageGenerationError(
+                    f"MCP server closed connection (waited {elapsed:.1f}s, skipped {skipped} lines)"
+                )
+            try:
+                response = json.loads(line.strip())
+                logger.debug("[MCP] got %s response (%.2fs)", method, elapsed)
+                break
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                skipped += 1
+                logger.debug("[MCP] skipping non-JSON stdout[%d]: %.200s", skipped, line.rstrip())
+                continue
+        else:
+            raise ImageGenerationError(
+                f"MCP server sent >{MAX_SKIP} non-JSON lines (noise threshold exceeded)"
+            )
 
-        response = json.loads(line.decode())
         if "error" in response:
             raise ImageGenerationError(f"MCP error: {response['error']}")
         return response.get("result", {})
@@ -149,7 +184,8 @@ class MCPProvider:
         args = {"prompt": prompt}
         if negative_prompt:
             args["negative_prompt"] = negative_prompt
-        for key in ("width", "height", "steps", "guidance", "seed", "num_images"):
+        for key in ("width", "height", "steps", "guidance", "cfg_truncation",
+                     "max_sequence_length", "seed", "num_images"):
             if key in params:
                 args[key] = params[key]
 

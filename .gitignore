@@ -16,6 +16,12 @@ outputs/
 
 # Session data
 ~/.drawagent/sessions.db
+*.db
+
+# Temp / scratch
+temp/
+tmp_*
+scripts/outputs/
 
 # IDE
 .idea/

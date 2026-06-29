@@ -39,6 +39,8 @@ class AgentBConfig(BaseModel):
         "height": 1024,
         "steps": 8,
         "guidance": 3.5,
+        "cfg_truncation": 1.0,
+        "max_sequence_length": 512,
         "seed": -1,
     })
     prompt_format: str = "zimage"
