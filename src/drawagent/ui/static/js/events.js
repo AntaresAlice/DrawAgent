@@ -8,11 +8,9 @@ const EventRouter = {
         switch (event.type) {
             case 'iteration.started':
                 Renderer.setProgress(event.iteration || 1, AppState.maxIterations);
-                Renderer.addSystemMessage(_t('iterationStarted', { iteration: event.iteration || 1 }));
                 break;
 
             case 'inspection.plan_ready':
-                Renderer.addSystemMessage(_t('inspectionPlanReady'));
                 break;
 
             case 'prompt.refined':
@@ -21,7 +19,7 @@ const EventRouter = {
 
             case 'generation.started':
                 Renderer.setLoading(true);
-                Renderer.addSystemMessage(_t('generatingImages'));
+                AppState._phase = 'generating';
                 break;
 
             case 'images.ready':
@@ -33,26 +31,24 @@ const EventRouter = {
                     if (imgPaths.length) {
                         AppState.viewer.images = AppState.viewer.images.concat(imgPaths);
                     }
+                    Renderer.addIterationImages(event.images, event.iteration || AppState.currentIteration);
                 }
                 break;
 
             case 'inspection.task_done':
-                Renderer.addSystemMessage(
-                    _t(event.result && event.result.passed ? 'inspectionDonePass' : 'inspectionDoneFail', { task: event.task || 'task' })
-                );
                 break;
 
             case 'inspection.complete':
-                Renderer.addSystemMessage(_t('allInspectionsDone'));
                 break;
 
             case 'quality.decision':
                 if (event.decision) {
                     const d = event.decision;
-                    Renderer.addSystemMessage(
-                        d.passed
-                            ? _t('qualityDecisionPass', { confidence: (d.confidence * 100).toFixed(0) })
-                            : _t('qualityDecisionFail', { reason: d.reasoning || '' })
+                    Renderer.addIterationDecision(
+                        d.passed,
+                        d.confidence,
+                        d.reasoning || '',
+                        d.recommendation || ''
                     );
                 }
                 break;
@@ -60,19 +56,30 @@ const EventRouter = {
             case 'loop.terminated':
                 Renderer.setLoading(false);
                 Renderer.addSystemMessage(_t('loopTerminated', { reason: event.reason || '' }));
+                AppState._phase = null;
+                notifyComplete(event.reason);
                 break;
 
             case 'agent.question':
-                Renderer.addSystemMessage(_t('agentQuestion', { text: event.text || '' }));
+                Renderer.addClarificationCard(event.text || '');
                 break;
 
             case 'user.steer':
                 Renderer.addSystemMessage(_t('directionChanged', { prompt: event.prompt || '' }));
                 break;
 
+            case 'user.rollback':
+                Renderer.addSystemMessage(_t('rollbackTo', { target: event.target || '' }));
+                break;
+
+            case 'clarification.needed':
+                Renderer.addClarificationCard(event.summary || '', event.estimated_iterations || 7);
+                break;
+
             case 'error':
+                Renderer.removeLoading();
                 Renderer.setLoading(false);
-                Renderer.showToast(event.message || _t('errorOccurred'), 'error');
+                Renderer.addErrorCard(event.message || _t('errorOccurred'));
                 break;
 
             default:
@@ -80,6 +87,12 @@ const EventRouter = {
         }
     }
 };
+
+function notifyComplete(reason) {
+    if (document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification('DrawAgent', { body: _t('generationComplete', { reason: reason || '' }) });
+    }
+}
 
 /**
  * AppActions — user-initiated actions.
@@ -91,6 +104,7 @@ const AppActions = {
             Renderer.clearMessages();
             Renderer.showToast(_t('newSessionCreated'), 'success');
             await this.refreshSessions();
+            AppState.viewer.images = [];
         } catch (e) {
             Renderer.showToast(_t('createFailed') + e.message, 'error');
         }
@@ -117,6 +131,22 @@ const AppActions = {
         try {
             await API.sendMessage(text);
             Renderer.showLoading();
+            AppState.viewer.images = [];
+        } catch (e) {
+            Renderer.showToast(_t('sendFailed') + e.message, 'error');
+            Renderer.setLoading(false);
+        }
+    },
+
+    async retryMessage(text) {
+        if (!AppState.currentSessionId) return;
+        Renderer.removeErrorCards();
+        WSClient.disconnect();
+        WSClient.connect(AppState.currentSessionId);
+        try {
+            await API.sendMessage(text);
+            Renderer.showLoading();
+            AppState.viewer.images = [];
         } catch (e) {
             Renderer.showToast(_t('sendFailed') + e.message, 'error');
             Renderer.setLoading(false);
@@ -130,6 +160,7 @@ const AppActions = {
         try {
             const history = await API.getHistory();
             Renderer.clearMessages();
+            AppState.viewer.images = [];
             if (history.messages) {
                 history.messages.forEach(m => Renderer.addMessage(m.role, m.content));
             }
@@ -138,9 +169,11 @@ const AppActions = {
                     Renderer.addIterationCard(it.number, it.images, it.inspections, {
                         passed: it.passed,
                         reasoning: it.decision_reasoning,
+                        prompt: it.prompt,
                     });
                 });
             }
+            document.getElementById('exportSessionBtn').style.display = 'inline-block';
             await this.refreshSessions();
         } catch (e) {
             console.error(_t('loadFailed'), e);
@@ -187,6 +220,12 @@ const AppActions = {
         }
     },
 
+    async rollbackTo(iteration) {
+        if (!confirm(_t('rollbackTo', { target: iteration }))) return;
+        await API.sendInterrupt('rollback', { target_iteration: iteration });
+        Renderer.showToast(_t('rollbackApplied'), 'info');
+    },
+
     applySettings() {
         const p = AppState.settings.generationParams;
         p.width = parseInt(document.getElementById('widthSlider').value);
@@ -199,16 +238,8 @@ const AppActions = {
         AppState.settings.autoAccept = document.getElementById('autoAcceptCb').checked;
         AppState.settings.showIntermediate = document.getElementById('showIntermediateCb').checked;
 
-        // Model config
-        const mc = AppState.settings.modelConfig;
-        const getVal = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
-        mc.provider = getVal('modelProvider');
-        mc.model = getVal('modelName');
-        mc.apiBase = getVal('modelApiBase');
-        mc.apiKey = getVal('modelApiKey');
-        mc.temperature = parseFloat(getVal('modelTemperature')) || 0.7;
-
         AppState.saveSettings();
+        updateQuickParamsUI();
         document.getElementById('settingsPanel').classList.remove('active');
         Renderer.showToast(_t('settingsApplied'), 'success');
     },
@@ -218,10 +249,73 @@ const AppActions = {
         AppState.settings.maxIterations = 7;
         AppState.settings.autoAccept = false;
         AppState.settings.showIntermediate = true;
-        AppState.settings.modelConfig = { provider: 'openai', model: 'gpt-4o', apiBase: 'https://api.openai.com/v1', apiKey: '', temperature: 0.7 };
         AppState.saveSettings();
         updateSettingsUI();
+        updateQuickParamsUI();
         Renderer.showToast(_t('settingsReset'), 'success');
+    },
+
+    applySystemSettings() {
+        const mc = AppState.settings.systemConfig;
+        mc.agentA = {
+            provider: document.getElementById('ssProviderA').value,
+            model: document.getElementById('ssModelA').value,
+            apiBase: document.getElementById('ssApiBaseA').value,
+            apiKey: document.getElementById('ssApiKeyA').value,
+            temperature: parseFloat(document.getElementById('ssTemperatureA').value) || 0.7,
+        };
+        mc.agentB = {
+            type: document.getElementById('ssTypeB').value,
+            apiBase: document.getElementById('ssApiBaseB').value,
+            endpoint: document.getElementById('ssEndpointB').value,
+            mcpCommand: document.getElementById('ssMcpCommand').value,
+        };
+        mc.agentC = {
+            provider: document.getElementById('ssProviderC').value,
+            model: document.getElementById('ssModelC').value,
+            apiBase: document.getElementById('ssApiBaseC').value,
+            apiKey: document.getElementById('ssApiKeyC').value,
+            temperature: parseFloat(document.getElementById('ssTemperatureC').value) || 0.3,
+        };
+        AppState.saveSettings();
+        document.getElementById('systemSettingsOverlay').classList.remove('active');
+        Renderer.showToast('系统设置已保存，重启服务后生效', 'info');
+    },
+
+    resetSystemSettings() {
+        AppState.settings.systemConfig = {
+            agentA: { provider: 'openai', model: 'gpt-4o', apiBase: 'https://api.openai.com/v1', apiKey: '', temperature: 0.7 },
+            agentB: { type: 'http', apiBase: 'http://localhost:8000', endpoint: '/api/generate', mcpCommand: '' },
+            agentC: { provider: 'openai', model: 'gpt-4o', apiBase: 'https://api.openai.com/v1', apiKey: '', temperature: 0.3 },
+        };
+        AppState.saveSettings();
+        updateSystemSettingsUI();
+        Renderer.showToast('系统设置已重置', 'success');
+    },
+
+    async exportSession() {
+        if (!AppState.currentSessionId) return;
+        try {
+            const resp = await fetch(API.baseUrl() + '/api/sessions/' + AppState.currentSessionId + '/export');
+            if (!resp.ok) throw new Error('Export failed');
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'drawagent_' + AppState.currentSessionId + '.zip';
+            a.click();
+            URL.revokeObjectURL(url);
+            Renderer.showToast(_t('exportSuccess', { id: AppState.currentSessionId }), 'success');
+        } catch (e) {
+            Renderer.showToast('导出失败: ' + e.message, 'error');
+        }
+    },
+
+    /** Request desktop notification permission */
+    requestNotificationPermission() {
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
     },
 };
 
@@ -240,12 +334,34 @@ function updateSettingsUI() {
     txt('seedValue', p.seed === -1 ? '-1 (' + _t('labelRandom') + ')' : p.seed);
     const aa = $('autoAcceptCb'); if (aa) aa.checked = AppState.settings.autoAccept;
     const si = $('showIntermediateCb'); if (si) si.checked = AppState.settings.showIntermediate;
+}
 
-    const mc = AppState.settings.modelConfig;
-    set('modelProvider', mc.provider);
-    set('modelName', mc.model);
-    set('modelApiBase', mc.apiBase);
-    set('modelApiKey', mc.apiKey);
-    set('modelTemperature', mc.temperature);
-    txt('temperatureValue', mc.temperature);
+function updateSystemSettingsUI() {
+    const mc = AppState.settings.systemConfig;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    const ma = mc.agentA; const mb = mc.agentB; const mc_ = mc.agentC;
+    set('ssProviderA', ma.provider); set('ssModelA', ma.model);
+    set('ssApiBaseA', ma.apiBase); set('ssApiKeyA', ma.apiKey);
+    set('ssTemperatureA', ma.temperature);
+    document.getElementById('ssTempValueA').textContent = ma.temperature;
+    set('ssTypeB', mb.type); set('ssApiBaseB', mb.apiBase);
+    set('ssEndpointB', mb.endpoint); set('ssMcpCommand', mb.mcpCommand);
+    document.getElementById('mcpFieldsB').style.display = mb.type === 'mcp' ? 'block' : 'none';
+    set('ssProviderC', mc_.provider); set('ssModelC', mc_.model);
+    set('ssApiBaseC', mc_.apiBase); set('ssApiKeyC', mc_.apiKey);
+    document.getElementById('ssTempValueC').textContent = mc_.temperature;
+    const tc = document.getElementById('ssTemperatureC'); if (tc) tc.value = mc_.temperature;
+}
+
+function updateQuickParamsUI() {
+    const p = AppState.settings.generationParams;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+    set('qpWidth', p.width); set('qpHeight', p.height); set('qpCount', p.numImages);
+    set('qpSteps', p.steps); set('qpGuidance', p.guidance); set('qpSeed', p.seed);
+    set('qpMaxIter', AppState.settings.maxIterations);
+}
+
+function syncQuickParams() {
+    // Read quick params from AppState settings on load
+    updateQuickParamsUI();
 }

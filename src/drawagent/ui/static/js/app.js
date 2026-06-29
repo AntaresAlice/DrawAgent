@@ -6,6 +6,7 @@ const AppState = {
     currentSessionId: null,
     sessions: {},
     messages: [],
+    _phase: null,
 
     isLoading: false,
     loopStatus: null,
@@ -22,34 +23,95 @@ const AppState = {
         maxIterations: 7,
         autoAccept: false,
         showIntermediate: true,
-        modelConfig: {
-            provider: 'openai',
-            model: 'gpt-4o',
-            apiBase: 'https://api.openai.com/v1',
-            apiKey: '',
-            temperature: 0.7,
+        systemConfig: {
+            agentA: {
+                provider: 'openai', model: 'gpt-4o',
+                apiBase: 'https://api.openai.com/v1',
+                apiKey: '', temperature: 0.7,
+            },
+            agentB: {
+                type: 'http', apiBase: 'http://localhost:8000',
+                endpoint: '/api/generate', mcpCommand: '',
+            },
+            agentC: {
+                provider: 'openai', model: 'gpt-4o',
+                apiBase: 'https://api.openai.com/v1',
+                apiKey: '', temperature: 0.3,
+            },
         },
     },
+
+    favorites: new Set(),
 
     viewer: {
         isOpen: false,
         currentIndex: 0,
         images: [],
+        metadata: [],
     },
 
     init() {
+        // Load persistent settings (without API keys) from localStorage
         const saved = localStorage.getItem('drawagent_settings');
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
-                Object.assign(this.settings, parsed);
+                this.settings.generationParams = { ...this.settings.generationParams, ...(parsed.generationParams || {}) };
+                if (parsed.maxIterations) this.settings.maxIterations = parsed.maxIterations;
+                if (parsed.autoAccept !== undefined) this.settings.autoAccept = parsed.autoAccept;
+                if (parsed.showIntermediate !== undefined) this.settings.showIntermediate = parsed.showIntermediate;
+                if (parsed.systemConfig) {
+                    this.settings.systemConfig.agentA = { ...this.settings.systemConfig.agentA, ...(parsed.systemConfig.agentA || {}) };
+                    this.settings.systemConfig.agentB = { ...this.settings.systemConfig.agentB, ...(parsed.systemConfig.agentB || {}) };
+                    this.settings.systemConfig.agentC = { ...this.settings.systemConfig.agentC, ...(parsed.systemConfig.agentC || {}) };
+                    // Don't load API keys from localStorage
+                    delete this.settings.systemConfig.agentA.apiKey;
+                }
             } catch (e) { /* ignore */ }
         }
+        // Load API keys from sessionStorage (cleared when browser closes)
+        const apiKeyA = sessionStorage.getItem('drawagent_apikey_a');
+        const apiKeyC = sessionStorage.getItem('drawagent_apikey_c');
+        if (apiKeyA) this.settings.systemConfig.agentA.apiKey = apiKeyA;
+        if (apiKeyC) this.settings.systemConfig.agentC.apiKey = apiKeyC;
+
         this.settings.serverUrl = this.settings.serverUrl.replace(/\/+$/, '');
+
+        // Restore favorites
+        const fav = sessionStorage.getItem('drawagent_favorites');
+        if (fav) {
+            try { this.favorites = new Set(JSON.parse(fav)); } catch (e) {}
+        }
     },
 
     saveSettings() {
-        localStorage.setItem('drawagent_settings', JSON.stringify(this.settings));
+        // Save everything except API keys to localStorage
+        const toSave = JSON.parse(JSON.stringify(this.settings));
+        if (toSave.systemConfig) {
+            if (toSave.systemConfig.agentA) delete toSave.systemConfig.agentA.apiKey;
+            if (toSave.systemConfig.agentC) delete toSave.systemConfig.agentC.apiKey;
+        }
+        localStorage.setItem('drawagent_settings', JSON.stringify(toSave));
+        // Store API keys in sessionStorage only
+        if (this.settings.systemConfig.agentA.apiKey) {
+            sessionStorage.setItem('drawagent_apikey_a', this.settings.systemConfig.agentA.apiKey);
+        }
+        if (this.settings.systemConfig.agentC.apiKey) {
+            sessionStorage.setItem('drawagent_apikey_c', this.settings.systemConfig.agentC.apiKey);
+        }
+    },
+
+    saveFavorites() {
+        sessionStorage.setItem('drawagent_favorites', JSON.stringify([...this.favorites]));
+    },
+
+    toggleFavorite(path) {
+        if (this.favorites.has(path)) {
+            this.favorites.delete(path);
+        } else {
+            this.favorites.add(path);
+        }
+        this.saveFavorites();
     },
 };
 

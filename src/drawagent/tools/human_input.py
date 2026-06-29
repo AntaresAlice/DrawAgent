@@ -73,7 +73,9 @@ class AskUserTool(BaseTool):
         if self._prompt_handler:
             answer = await self._prompt_handler(question, options, context)
         else:
-            answer = self.prompt(question, options)
+            import asyncio
+            loop = asyncio.get_running_loop()
+            answer = await loop.run_in_executor(None, self.prompt, question, options)
 
         return ToolResult(
             tool_call_id=ctx.tool_call_id or "",

@@ -15,9 +15,11 @@ from drawagent.tools.base import BaseTool, ToolContext, ToolResult
 
 
 class GenerateImageTool(BaseTool):
-    """Agent B wrapper — calls image generation HTTP API.
+    """Agent B wrapper — calls image generation API.
 
-    Supports any backend that exposes a compatible HTTP API (Z-Image, SD, etc.).
+    Supports two backends configured via AgentBConfig.type:
+    - http: Direct HTTP API POST with JSON body
+    - mcp: Model Context Protocol server (stdio or remote)
     """
 
     name = "generate_image"
@@ -74,7 +76,26 @@ class GenerateImageTool(BaseTool):
         self.config = config
         self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(300.0))
+        self._client: httpx.AsyncClient | None = None
+        self._mcp_provider = None
+        if config.type == "mcp":
+            from drawagent.providers.mcp_provider import MCPProvider
+            self._mcp_provider = MCPProvider(config)
+
+    async def _ensure_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(300.0))
+        return self._client
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
+    async def _ensure_mcp_connected(self) -> None:
+        if self._mcp_provider is not None and not self._mcp_provider._initialized:
+            await self._mcp_provider.connect()
 
     async def execute(self, args: dict, ctx: ToolContext) -> ToolResult:
         prompt = args["prompt"]
@@ -157,6 +178,56 @@ class GenerateImageTool(BaseTool):
         params: dict,
         index: int,
     ) -> Path:
+        if self.config.type == "mcp":
+            return await self._generate_mcp(prompt, negative_prompt, params, index)
+        return await self._generate_http(prompt, negative_prompt, params, index)
+
+    async def _generate_mcp(
+        self,
+        prompt: str,
+        negative_prompt: str,
+        params: dict,
+        index: int,
+    ) -> Path:
+        await self._ensure_mcp_connected()
+        assert self._mcp_provider is not None
+        result = await self._mcp_provider.generate(prompt, negative_prompt, **params)
+
+        if isinstance(result, dict):
+            image_data = None
+            content = result.get("content", [])
+            if isinstance(content, list) and content:
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "image":
+                        b64 = item.get("data", "")
+                        if b64:
+                            image_data = base64.b64decode(b64)
+                            break
+                    elif isinstance(item, dict) and item.get("type") == "text":
+                        text = item.get("text", "")
+                        if text.startswith("data:image"):
+                            _, b64 = text.split(",", 1)
+                            image_data = base64.b64decode(b64)
+                            break
+            if image_data is None:
+                raise ImageGenerationError(f"MCP result has no image data: {json.dumps(result, default=str)[:500]}")
+
+            timestamp = int(time.time() * 1000)
+            filename = f"gen_mcp_{timestamp}_{index:02d}_{params.get('seed', -1)}.png"
+            output_path = self.output_dir / filename
+            image = Image.open(BytesIO(image_data))
+            image.save(output_path, "PNG")
+            return output_path
+
+        raise ImageGenerationError(f"Unexpected MCP result format: {type(result)}")
+
+    async def _generate_http(
+        self,
+        prompt: str,
+        negative_prompt: str,
+        params: dict,
+        index: int,
+    ) -> Path:
         api_url = f"{self.config.api_base.rstrip('/')}{self.config.endpoint}"
 
         body = {
@@ -165,7 +236,18 @@ class GenerateImageTool(BaseTool):
             **params,
         }
 
-        resp = await self._client.post(api_url, json=body)
+        client = await self._ensure_client()
+        try:
+            resp = await client.post(api_url, json=body)
+        except httpx.ConnectError:
+            raise ImageGenerationError(
+                f"无法连接到图像生成服务器 (Agent B) — 请确认服务是否已启动: {api_url}\n"
+                f"在系统设置中检查 Agent B 的 API Base URL 和 Endpoint"
+            )
+        except httpx.TimeoutException:
+            raise ImageGenerationError(
+                f"图像生成请求超时 — 服务器 {api_url} 响应过慢"
+            )
         if resp.status_code != 200:
             raise ImageGenerationError(
                 f"Image generation API returned {resp.status_code}: {resp.text[:500]}"
@@ -179,7 +261,7 @@ class GenerateImageTool(BaseTool):
             if "base64" in data:
                 image_data = base64.b64decode(data["base64"])
             elif "url" in data:
-                dl_resp = await self._client.get(data["url"])
+                dl_resp = await client.get(data["url"])
                 image_data = dl_resp.content
             elif "images" in data:
                 image_data = base64.b64decode(data["images"][0])
@@ -191,7 +273,7 @@ class GenerateImageTool(BaseTool):
             image_data = resp.content
 
         timestamp = int(time.time() * 1000)
-        filename = f"gen_{ctx_message_id(ctx)}_{timestamp}_{index:02d}_{params['seed']}.png"
+        filename = f"gen_{timestamp}_{index:02d}_{params['seed']}.png"
         output_path = self.output_dir / filename
 
         image = Image.open(BytesIO(image_data))
@@ -200,7 +282,11 @@ class GenerateImageTool(BaseTool):
         return output_path
 
     async def close(self) -> None:
-        await self._client.aclose()
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+        if self._mcp_provider is not None:
+            await self._mcp_provider.close()
 
 
 def ctx_message_id(ctx: ToolContext) -> str:

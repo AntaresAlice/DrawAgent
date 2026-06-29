@@ -41,20 +41,57 @@ async def run_server(args):
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
     from drawagent.config.loader import ConfigLoader
-    from drawagent.core.events import EventBus
+    from drawagent.core.events import EventBus, DrawEvent
     from drawagent.orchestrator.interrupt import InterruptHandler
     from drawagent.orchestrator.session import SessionManager
+    from drawagent.persistence.database import Database
     from drawagent.api.app import create_app
     from drawagent.api.routes import init_routes
     from drawagent.api.websocket import ws_manager
+    from drawagent.tools.base import ToolRegistry
+    from drawagent.tools.generate_image import GenerateImageTool
+    from drawagent.tools.inspect_image import InspectImageTool
+    from drawagent.memory.tools import LoadMemoryTool, SearchMemoryTool, SaveMemoryTool
+    from drawagent.memory.store import MemoryStore
+    from drawagent.memory.index import MemoryIndex
+    from drawagent.orchestrator.server_runner import ServerRunner
 
     config = await ConfigLoader.load(Path.cwd())
     event_bus = EventBus()
-    session_manager = SessionManager()
+
+    db = Database()
+    await db.connect()
+    session_manager = SessionManager(db=db)
     interrupt_handler = InterruptHandler()
 
+    restored = await session_manager.load_all()
+    if restored:
+        print(f"Restored {len(restored)} session(s) from database")
+
+    registry = ToolRegistry()
+    gen_tool = GenerateImageTool(config=config.agent_b, output_dir=args.output_dir)
+    inspect_tool = InspectImageTool(vision_provider=None)
+    registry.register(gen_tool)
+    registry.register(inspect_tool)
+
+    memory_dir = Path(config.memory.base_dir).expanduser()
+    store = MemoryStore(memory_dir)
+    index = MemoryIndex(memory_dir)
+    registry.register(LoadMemoryTool(store))
+    registry.register(SearchMemoryTool(store))
+    registry.register(SaveMemoryTool(store, index))
+
+    runner = ServerRunner(
+        config=config,
+        tool_registry=registry,
+        session_manager=session_manager,
+        interrupt_handler=interrupt_handler,
+        event_bus=event_bus,
+        output_dir=args.output_dir,
+    )
+
     app = create_app(output_dir=args.output_dir)
-    init_routes(session_manager, interrupt_handler, args.output_dir)
+    init_routes(session_manager, interrupt_handler, args.output_dir, runner)
 
     async def broadcast_event(event_type, data):
         data_dict = dict(data) if not isinstance(data, dict) else data
@@ -66,6 +103,7 @@ async def run_server(args):
         "iteration.started", "prompt.refined", "generation.started",
         "images.ready", "inspection.task_done", "inspection.complete",
         "quality.decision", "loop.terminated", "user.interrupt", "error",
+        "agent.question", "user.steer", "user.rollback",
     ]:
         event_bus.on(evt, broadcast_event)
 
@@ -166,10 +204,32 @@ async def run_cli(args):
     registry.register(inspect_tool)
     registry.register(ask_tool)
 
+    from drawagent.memory.tools import LoadMemoryTool, SearchMemoryTool, SaveMemoryTool
+    from drawagent.memory.store import MemoryStore
+    from drawagent.memory.index import MemoryIndex
+
+    memory_dir = Path(config.memory.base_dir).expanduser()
+    store = MemoryStore(memory_dir)
+    index = MemoryIndex(memory_dir)
+    registry.register(LoadMemoryTool(store))
+    registry.register(SearchMemoryTool(store))
+    registry.register(SaveMemoryTool(store, index))
+
     agent_a = AgentA(provider=provider_a, tool_registry=registry, session=session)
     assembler = ContextAssembler(agent_b_config=config.agent_b)
 
     from drawagent.orchestrator.loop import InnerLoop
+
+    loop = InnerLoop(
+        session=session,
+        agent_a=agent_a,
+        tool_registry=registry,
+        session_manager=session_mgr,
+        interrupt_handler=interrupt_handler,
+        assembler=assembler,
+        event_bus=event_bus,
+        config=config.loop,
+    )
 
     while True:
         try:
@@ -194,20 +254,10 @@ async def run_cli(args):
             continue
 
         session.user_request = user_input
+        agent_a.session = session
+        loop.session = session
         print(f"\nProcessing: \"{user_input}\"")
         print("-" * 40)
-
-        agent_a2 = AgentA(provider=provider_a, tool_registry=registry, session=session)
-        loop = InnerLoop(
-            session=session,
-            agent_a=agent_a2,
-            tool_registry=registry,
-            session_manager=session_mgr,
-            interrupt_handler=interrupt_handler,
-            assembler=assembler,
-            event_bus=event_bus,
-            config=config.loop,
-        )
 
         try:
             result = await loop.run(initial_prompt=user_input)

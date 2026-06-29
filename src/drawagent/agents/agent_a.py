@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import AsyncIterator
 
 from drawagent.agents.prompts import PROMPT_INSPECTION_PLAN, PROMPT_EVALUATE, PROMPT_REFINE
+from drawagent.context.compaction import CompactedHistory
 from drawagent.core.types import (
     InspectionTaskResult,
     Iteration,
@@ -48,6 +48,19 @@ class AgentA:
         self.provider = provider
         self.registry = tool_registry
         self.session = session
+        self._compacted: CompactedHistory | None = None
+
+    def _inject_compacted(self, messages: list[LLMMessage]) -> list[LLMMessage]:
+        if self._compacted:
+            result = [
+                LLMMessage(
+                    role="system",
+                    content=self._compacted.to_context_string(),
+                ),
+                *messages,
+            ]
+            return result
+        return messages
 
     async def run_turn(
         self,
@@ -61,6 +74,7 @@ class AgentA:
         Supports up to one round of tool calling per turn (no recursive tool loops).
         """
         materialization = self.registry.materialize(enabled_tools)
+        messages = self._inject_compacted(messages)
 
         tool_calls_accumulated: list[dict] = []
         accumulated: dict[str, dict] = {}
@@ -137,9 +151,33 @@ class AgentA:
             return f"<tool_error name='{result.name}'>{result.error}</tool_error>"
         return f"<tool_result name='{result.name}'>{result.output}</tool_result>"
 
+    async def clarify_request(self, current_prompt: str) -> str | None:
+        """Clarify the user's request before starting generation.
+
+        Returns a summary of understanding, or None to skip clarification.
+        """
+        messages = self._inject_compacted([
+            LLMMessage(
+                role="system",
+                content=(
+                    "You are Agent A — an art director. Before starting image generation, "
+                    "briefly summarize your understanding of the user's request and confirm "
+                    "the key details: subject, style, composition, mood, any specific elements. "
+                    "Keep it under 3 sentences. Output ONLY the summary, nothing else."
+                ),
+            ),
+            LLMMessage(role="user", content=current_prompt),
+        ])
+        result = await self.provider.chat(messages)
+        content = result.get("content", "")
+        text = content if isinstance(content, str) else str(content)
+        if text and len(text) > 10:
+            return text.strip()
+        return None
+
     async def refine_prompt(self, current_prompt: str, issues: list[dict]) -> str:
         """Refine the generation prompt based on inspection issues."""
-        messages = [
+        messages = self._inject_compacted([
             LLMMessage(role="system", content=PROMPT_REFINE),
             LLMMessage(
                 role="user",
@@ -150,7 +188,7 @@ class AgentA:
                     f"Please output the refined prompt."
                 ),
             ),
-        ]
+        ])
         result = await self.provider.chat(messages)
         content = result.get("content", "")
         return content if isinstance(content, str) else str(content)
@@ -171,10 +209,10 @@ class AgentA:
             prev_json = json.dumps(previous_issues, ensure_ascii=False, indent=2)
             context_parts.append(f"Previous issues to re-check:\n{prev_json}")
 
-        messages = [
+        messages = self._inject_compacted([
             LLMMessage(role="system", content=PROMPT_INSPECTION_PLAN),
             LLMMessage(role="user", content="\n\n".join(context_parts)),
-        ]
+        ])
         result = await self.provider.chat(messages)
         content = result.get("content", "[]")
         text = content if isinstance(content, str) else str(content)
@@ -201,7 +239,7 @@ class AgentA:
             indent=2,
         )
 
-        messages = [
+        messages = self._inject_compacted([
             LLMMessage(role="system", content=PROMPT_EVALUATE),
             LLMMessage(
                 role="user",
@@ -213,22 +251,55 @@ class AgentA:
                     f"Output your quality decision as JSON."
                 ),
             ),
-        ]
+        ])
         result = await self.provider.chat(messages)
         content = result.get("content", "{}")
         text = content if isinstance(content, str) else str(content)
         return self._parse_quality_decision(text)
 
+    def _find_json_block(self, text: str, bracket_type: str = "object") -> str | None:
+        """Find the first balanced JSON block using bracket counting.
+
+        Avoids greedy regex bugs when multiple JSON blocks exist in the text.
+        """
+        open_b, close_b = ('[', ']') if bracket_type == 'array' else ('{', '}')
+        start = text.find(open_b)
+        if start == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == '\\':
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+            else:
+                if ch == '"':
+                    in_string = True
+                elif ch == open_b:
+                    depth += 1
+                elif ch == close_b:
+                    depth -= 1
+                    if depth == 0:
+                        return text[start:i + 1]
+        return None
+
     def _parse_json_array(self, text: str) -> list[dict]:
-        match = re.search(r"\[.*\]", text, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
+        block = self._find_json_block(text, "array")
+        if block:
+            return json.loads(block)
         return []
 
     def _parse_quality_decision(self, text: str) -> QualityDecision:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            data = json.loads(match.group(0))
+        block = self._find_json_block(text, "object")
+        if block:
+            data = json.loads(block)
             return QualityDecision(
                 passed=data.get("passed", False),
                 confidence=float(data.get("confidence", 0.5)),

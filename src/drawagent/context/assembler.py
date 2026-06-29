@@ -30,6 +30,13 @@ class ContextAssembler:
     ):
         self.agent_b_config = agent_b_config
         self._memory_store = memory_store
+        self._compacted: CompactedHistory | None = None
+
+    def set_compacted_history(self, compacted: CompactedHistory) -> None:
+        self._compacted = compacted
+
+    def get_compacted_history(self) -> CompactedHistory | None:
+        return self._compacted
 
     async def assemble(
         self,

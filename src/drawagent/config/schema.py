@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 
 
 class AgentAConfig(BaseModel):
@@ -15,12 +15,24 @@ class AgentAConfig(BaseModel):
 
 
 class AgentBConfig(BaseModel):
-    """Agent B (image generator) configuration."""
+    """Agent B (image generator) configuration.
 
+    Supports two backends:
+    - http: Direct HTTP API POST with JSON body
+    - mcp: Model Context Protocol server (stdio or remote)
+    """
+
+    type: Literal["http", "mcp"] = "http"
     provider: str = "local_zimage"
     model: str = "Z-Image-Turbo"
     api_base: str = "http://localhost:8000"
     endpoint: str = "/api/generate"
+
+    # MCP mode
+    mcp_command: list[str] | None = None
+    mcp_url: str | None = None
+    mcp_tool_name: str = "generate_image"
+
     default_params: dict = Field(default_factory=lambda: {
         "width": 1024,
         "height": 1024,

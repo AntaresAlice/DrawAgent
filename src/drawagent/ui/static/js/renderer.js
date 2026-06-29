@@ -1,7 +1,9 @@
 /**
- * Renderer — UI rendering: messages, images, iteration cards, inspection panels.
+ * Renderer — UI rendering: messages, images, iteration cards, error cards, compare view.
  */
 const Renderer = {
+    _lastIterationCard: null,
+
     addMessage(role, content) {
         const container = document.getElementById('messagesContainer');
         const welcome = document.getElementById('welcomeScreen');
@@ -30,6 +32,57 @@ const Renderer = {
         this._scrollToBottom();
     },
 
+    addClarificationCard(summary, estIterations) {
+        const container = document.getElementById('messagesContainer');
+        const welcome = document.getElementById('welcomeScreen');
+        if (welcome) welcome.style.display = 'none';
+
+        const card = document.createElement('div');
+        card.className = 'message agent';
+        card.id = 'clarificationCard';
+        const escSummary = summary.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        card.innerHTML = `<div class="message-avatar"><i class="fa-solid fa-robot"></i></div>
+            <div class="message-content">
+                <div style="margin-bottom:10px;"><strong>需求确认</strong></div>
+                <div style="color:var(--text-secondary);margin-bottom:12px;">${summary}</div>
+                ${estIterations ? `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">预计 ${estIterations} 轮迭代</div>` : ''}
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-primary" style="flex:0;padding:6px 14px;font-size:12px;" onclick="WSClient.send({type:'clarify_accept'});document.getElementById('clarificationCard')?.remove();">
+                        <i class="fa-solid fa-check"></i> 确认开始
+                    </button>
+                    <button class="btn btn-secondary" style="flex:0;padding:6px 14px;font-size:12px;" onclick="const extra=prompt('补充说明：');if(extra){WSClient.send({type:'clarify_modify',text:extra});document.getElementById('clarificationCard')?.remove();}">
+                        <i class="fa-solid fa-pen-to-square"></i> 修改需求
+                    </button>
+                </div>
+            </div>`;
+        container.appendChild(card);
+        this._scrollToBottom();
+    },
+
+    addErrorCard(message) {
+        const container = document.getElementById('messagesContainer');
+        const welcome = document.getElementById('welcomeScreen');
+        if (welcome) welcome.style.display = 'none';
+
+        const card = document.createElement('div');
+        card.className = 'message agent error-card';
+        const escapedMsg = message.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        card.innerHTML = `<div class="message-avatar"><i class="fa-solid fa-circle-exclamation" style="color:var(--error);"></i></div>
+            <div class="message-content" style="border-color:var(--error);background:rgba(239,68,68,0.05);">
+                <div style="margin-bottom:8px;"><i class="fa-solid fa-triangle-exclamation" style="color:var(--error);"></i> <strong>错误</strong></div>
+                <div style="color:var(--text-secondary);font-size:13px;margin-bottom:10px;">${message}</div>
+                <button class="btn btn-primary retry-btn" onclick="AppActions.retryMessage('${escapedMsg}')" style="font-size:12px;padding:6px 14px;flex:0;">
+                    <i class="fa-solid fa-rotate-right"></i> 重试
+                </button>
+            </div>`;
+        container.appendChild(card);
+        this._scrollToBottom();
+    },
+
+    removeErrorCards() {
+        document.querySelectorAll('.error-card').forEach(el => el.remove());
+    },
+
     addIterationCard(number, images, inspections, decision) {
         const container = document.getElementById('messagesContainer');
         const welcome = document.getElementById('welcomeScreen');
@@ -37,20 +90,56 @@ const Renderer = {
 
         const card = document.createElement('div');
         card.className = 'iteration-card';
+        card.setAttribute('data-iteration', number);
+        card.setAttribute('data-prompt', (decision && decision.prompt) || '');
+        this._lastIterationCard = card;
 
         const passed = decision && decision.passed;
         const statusClass = passed ? 'pass' : 'fail';
         const statusIcon = passed ? 'fa-circle-check' : 'fa-circle-exclamation';
         const statusText = _t(passed ? 'qualityPassed' : 'issuesFound');
+        const escPrompt = (decision && decision.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+        // Get previous iteration's prompt for diff
+        let diffHtml = '';
+        if (number > 1 && decision && decision.prompt) {
+            const prevCard = document.querySelector(`.iteration-card[data-iteration="${number - 1}"]`);
+            const prevPrompt = prevCard ? prevCard.getAttribute('data-prompt') : '';
+            if (prevPrompt && prevPrompt !== decision.prompt) {
+                diffHtml = `<div class="iteration-prompt-diff">
+                    <div class="iteration-prompt-header"><i class="fa-solid fa-code-compare"></i> ${_t('promptDiff')}</div>
+                    ${Renderer._renderDiff(prevPrompt, decision.prompt)}
+                </div>`;
+            }
+        }
 
         card.innerHTML = `<div class="iteration-header" onclick="this.parentElement.querySelector('.iteration-body').classList.toggle('collapsed')">
                 <span class="iteration-badge">${_t('iterationBadge', { number })}</span>
                 <span class="iteration-status ${statusClass}"><i class="fa-solid ${statusIcon}"></i> ${statusText}</span>
                 <span style="flex:1;"></span>
+                <button class="iteration-action-btn" title="对比" onclick="event.stopPropagation(); Renderer.openCompareView(${number})">
+                    <i class="fa-solid fa-columns"></i>
+                </button>
                 <i class="fa-solid fa-chevron-down" style="color:var(--text-secondary);font-size:12px;"></i>
             </div>
             <div class="iteration-body">
-                ${images && images.length ? `<div class="iteration-images">${images.map((img, i) => `<img class="iteration-image" src="${API.imageUrl(img.filename || img.path.split('/').pop())}" alt="${img.filename || 'image'}" title="${_t('seedLabel')}: ${img.seed}" onclick="Viewer.open(${JSON.stringify(images.map(im => API.imageUrl(im.filename || im.path.split('/').pop())).filter(Boolean))}, ${i})">`).join('')}</div>` : ''}
+                ${decision && decision.prompt ? `<div class="iteration-prompt-section">
+                    <div class="iteration-prompt-header"><i class="fa-solid fa-pen-to-square"></i> ${_t('promptLabel')}<button class="copy-prompt-btn" onclick="navigator.clipboard.writeText('${escPrompt}');Renderer.showToast('已复制','success');event.stopPropagation();"><i class="fa-solid fa-copy"></i></button></div>
+                    <div class="iteration-prompt">${this._formatContent(decision.prompt)}</div>
+                </div>` : ''}
+                ${diffHtml}
+                ${images && images.length ? `<div class="iteration-images">${images.map((img, i) => {
+                    const url = API.imageUrl(img.filename || (img.path && img.path.split('/').pop()) || '');
+                    const isFav = AppState.favorites.has(url);
+                    return `<div class="iteration-image-wrapper">
+                        <img class="iteration-image" src="${url}" alt="${img.filename || 'image'}" title="${_t('seedLabel')}: ${img.seed} | ${img.width || ''}x${img.height || ''}" onclick="Viewer.open(${JSON.stringify(images.map(im => API.imageUrl(im.filename || (im.path && im.path.split('/').pop()) || '')).filter(Boolean))}, ${i})">
+                        <div class="iteration-image-actions">
+                            <a class="image-action-btn" href="${url}" download title="${_t('download')}"><i class="fa-solid fa-download"></i></a>
+                            <button class="image-action-btn ${isFav ? 'favorited' : ''}" onclick="event.stopPropagation(); AppState.toggleFavorite('${url}'); this.classList.toggle('favorited');" title="${_t('favorite')}"><i class="fa-${isFav ? 'solid' : 'regular'} fa-star"></i></button>
+                            <button class="image-action-btn" onclick="event.stopPropagation(); navigator.clipboard.writeText('${url}'); Renderer.showToast('已复制URL','success');" title="${_t('copyUrl')}"><i class="fa-solid fa-link"></i></button>
+                        </div>
+                    </div>`;
+                }).join('')}</div>` : ''}
                 ${inspections && inspections.length ? inspections.map(i => `<div class="inspection-item ${i.passed ? 'pass' : 'fail'}"><span class="status-icon"><i class="fa-solid ${i.passed ? 'fa-circle-check' : 'fa-circle-xmark'}"></i></span><div><strong>${i.task_name || 'Inspection'}</strong><div style="color:var(--text-secondary);margin-top:2px;">${(i.observation || '').slice(0, 200)}</div></div></div>`).join('') : ''}
                 ${decision ? `<div class="decision-banner ${decision.passed ? 'pass' : 'fail'}"><i class="fa-solid ${decision.passed ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i><span>${decision.reasoning || _t(decision.passed ? 'decisionPassed' : 'decisionNeedsImprovement')}</span></div>` : ''}
             </div>`;
@@ -60,7 +149,116 @@ const Renderer = {
         return card;
     },
 
-    /* Render the welcome screen */
+    _renderDiff(oldText, newText) {
+        const oldLines = oldText.split('\n');
+        const newLines = newText.split('\n');
+        const maxLen = Math.max(oldLines.length, newLines.length);
+        let html = '<div style="font-family:monospace;font-size:12px;line-height:1.5;margin-top:4px;">';
+        for (let i = 0; i < maxLen; i++) {
+            const oldL = oldLines[i] || '';
+            const newL = newLines[i] || '';
+            if (oldL === newL) {
+                html += `<div style="color:var(--text-secondary);">  ${this._escHtml(newL)}</div>`;
+            } else if (!oldL) {
+                html += `<div style="background:rgba(16,185,129,0.15);color:var(--success);">+ ${this._escHtml(newL)}</div>`;
+            } else if (!newL) {
+                html += `<div style="background:rgba(239,68,68,0.15);color:var(--error);">- ${this._escHtml(oldL)}</div>`;
+            } else {
+                html += `<div style="background:rgba(239,68,68,0.1);color:var(--error);">- ${this._escHtml(oldL)}</div>`;
+                html += `<div style="background:rgba(16,185,129,0.1);color:var(--success);">+ ${this._escHtml(newL)}</div>`;
+            }
+        }
+        html += '</div>';
+        return html;
+    },
+
+    _escHtml(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); },
+
+    addIterationImages(images, iteration) {
+        // Called for incremental updates during generation
+        const cards = document.querySelectorAll('.iteration-card');
+        if (cards.length > 0) {
+            const lastCard = cards[cards.length - 1];
+            const body = lastCard.querySelector('.iteration-body');
+            if (body && images && images.length) {
+                const imagesDiv = body.querySelector('.iteration-images') || (() => {
+                    const d = document.createElement('div');
+                    d.className = 'iteration-images';
+                    body.prepend(d);
+                    return d;
+                })();
+                images.forEach((img, i) => {
+                    const url = API.imageUrl(img.filename || (img.path && img.path.split('/').pop()) || '');
+                    imagesDiv.innerHTML += `<div class="iteration-image-wrapper">
+                        <img class="iteration-image" src="${url}" alt="${img.filename || 'image'}" onclick="Viewer.open(${JSON.stringify(images.map(im => API.imageUrl(im.filename || (im.path && im.path.split('/').pop()) || '')).filter(Boolean))}, ${i})">
+                        <div class="iteration-image-actions">
+                            <a class="image-action-btn" href="${url}" download><i class="fa-solid fa-download"></i></a>
+                        </div>
+                    </div>`;
+                });
+            }
+        }
+    },
+
+    addIterationDecision(passed, confidence, reasoning, recommendation) {
+        const cards = document.querySelectorAll('.iteration-card');
+        if (cards.length > 0) {
+            const lastCard = cards[cards.length - 1];
+            const body = lastCard.querySelector('.iteration-body');
+            const header = lastCard.querySelector('.iteration-header');
+            if (header) {
+                const status = header.querySelector('.iteration-status');
+                if (status) {
+                    status.className = `iteration-status ${passed ? 'pass' : 'fail'}`;
+                    status.innerHTML = `<i class="fa-solid ${passed ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i> ${_t(passed ? 'qualityPassed' : 'issuesFound')}`;
+                }
+            }
+            if (body) {
+                const existingBanner = body.querySelector('.decision-banner');
+                if (existingBanner) existingBanner.remove();
+                const banner = document.createElement('div');
+                banner.className = `decision-banner ${passed ? 'pass' : 'fail'}`;
+                const confPct = (confidence * 100).toFixed(0);
+                banner.innerHTML = `<i class="fa-solid ${passed ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i><span>${reasoning || _t(passed ? 'decisionPassed' : 'decisionNeedsImprovement')} (${_t('confidence')}: ${confPct}%)</span>`;
+                body.appendChild(banner);
+            }
+        }
+    },
+
+    openCompareView(_iteration) {
+        const overlay = document.getElementById('compareOverlay');
+        const body = document.getElementById('compareBody');
+        if (!overlay || !body) return;
+
+        const cards = document.querySelectorAll('.iteration-card');
+        if (cards.length < 2) {
+            this.showToast('需要至少两轮迭代才能对比', 'info');
+            return;
+        }
+
+        let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;">';
+        cards.forEach((card, idx) => {
+            const header = card.querySelector('.iteration-badge');
+            const images = card.querySelectorAll('.iteration-image');
+            const decision = card.querySelector('.decision-banner');
+            const label = header ? header.textContent : `Iteration ${idx + 1}`;
+
+            html += `<div style="background:var(--bg);border-radius:var(--radius-sm);padding:16px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                    <strong>${label}</strong>
+                    <button class="btn btn-secondary" style="flex:0;font-size:11px;padding:4px 10px;" onclick="AppActions.rollbackTo(${idx + 1})">回退到此</button>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                    ${Array.from(images).map(img => `<img src="${img.src}" style="width:120px;height:120px;object-fit:cover;border-radius:4px;" onclick="Viewer.open([${Array.from(images).map(im => `'${im.src}'`).join(',')}], 0)">`).join('')}
+                </div>
+                ${decision ? `<div style="font-size:12px;color:var(--text-secondary);">${decision.textContent || ''}</div>` : ''}
+            </div>`;
+        });
+        html += '</div>';
+        body.innerHTML = html;
+        overlay.classList.add('active');
+    },
+
     renderWelcome() {
         const container = document.getElementById('messagesContainer');
         container.innerHTML = `<div class="welcome-screen" id="welcomeScreen">
@@ -81,6 +279,7 @@ const Renderer = {
         const welcome = document.getElementById('welcomeScreen');
         if (welcome) welcome.style.display = 'none';
 
+        this.removeLoading();
         const div = document.createElement('div');
         div.className = 'message agent';
         div.id = 'loadingIndicator';
@@ -100,7 +299,7 @@ const Renderer = {
         toast.className = `toast ${type}`;
         toast.textContent = text;
         document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 3000);
+        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3000);
     },
 
     setLoading(loading) {
@@ -112,7 +311,12 @@ const Renderer = {
         if (btn) btn.disabled = loading;
         if (bar) bar.style.display = loading ? 'flex' : 'none';
         if (status) {
-            status.textContent = loading ? _t('generating') : _t('ready');
+            if (loading) {
+                const phase = AppState._phase || 'generating';
+                status.textContent = _t(phase === 'planning' ? 'phasePlanning' : 'phaseGenerating');
+            } else {
+                status.textContent = _t('ready');
+            }
             status.classList.toggle('loading', loading);
         }
     },
@@ -134,6 +338,9 @@ const Renderer = {
                     <div class="session-title">${s.user_request || _t('newSessionTitle')}</div>
                     <div class="session-date">${s.created_at ? new Date(s.created_at).toLocaleDateString() : ''}</div>
                 </div>
+                <button class="session-action-btn" onclick="event.stopPropagation(); AppActions.selectSession('${s.id}'); setTimeout(() => AppActions.exportSession(), 100);" title="${_t('download')}">
+                    <i class="fa-solid fa-download"></i>
+                </button>
                 <button class="session-delete" onclick="event.stopPropagation(); AppActions.deleteSession('${s.id}')" title="${_t('sessionDelete')}">
                     <i class="fa-solid fa-trash"></i>
                 </button>
@@ -143,7 +350,6 @@ const Renderer = {
 
     clearMessages() {
         this.renderWelcome();
-        // re-bind suggestion chips
         document.querySelectorAll('.suggestion-chip').forEach(chip => {
             chip.addEventListener('click', () => {
                 document.getElementById('promptInput').value = chip.textContent;
@@ -152,122 +358,19 @@ const Renderer = {
         });
     },
 
-    /** Refresh all i18n text in static DOM elements. All operations are null-safe. */
     refreshI18n() {
         const $ = (id) => document.getElementById(id);
-        const $$ = (sel) => document.querySelector(sel);
-
         const setText = (el, text) => { if (el) el.textContent = text; };
-        const setTitle = (el, text) => { if (el) el.title = text; };
         const setPlaceholder = (el, text) => { if (el) el.placeholder = text; };
 
-        // Lang toggle badge
         const langToggle = $('langToggle');
         if (langToggle) langToggle.setAttribute('data-lang', I18n.getLang() === 'zh-CN' ? '中' : 'EN');
 
-        // Sidebar buttons
-        const nsb = $('newSessionBtn');
-        if (nsb) { const sp = nsb.querySelector('span'); if (sp) setText(sp, _t('newSession')); }
-        const sb = $('settingsBtn');
-        if (sb) { const sp = sb.querySelector('span'); if (sp) setText(sp, _t('parameters')); }
-
-        // Chat header
-        setTitle($('clearChatBtn'), _t('clearChatTitle'));
-
-        // Input area
         setPlaceholder($('promptInput'), _t('inputPlaceholder'));
-        setTitle($('sendButton'), _t('sendTitle'));
-
-        // Interrupt bar
-        const ibar = $('interruptBar');
-        if (ibar) {
-            const label = ibar.querySelector('.interrupt-label');
-            if (label) setText(label, _t('interruptLabel'));
-        }
-        // Interrupt buttons — update text node after icon (childNodes[2])
-        [$('acceptBtn'), $('steerBtn'), $('pauseBtn')].forEach(btn => {
-            if (!btn) return;
-            const key = btn.id === 'acceptBtn' ? 'acceptBtn' : btn.id === 'steerBtn' ? 'steerBtn' : 'pauseBtn';
-            const titleKey = btn.id === 'acceptBtn' ? 'acceptTitle' : btn.id === 'steerBtn' ? 'steerTitle' : 'pauseTitle';
-            setTitle(btn, _t(titleKey));
-            // Update text after icon: <i>..</i> text
-            const txt = btn.childNodes;
-            for (let i = 0; i < txt.length; i++) {
-                if (txt[i].nodeType === 3 && txt[i].textContent.trim()) {
-                    txt[i].textContent = ' ' + _t(key);
-                    break;
-                }
-            }
-        });
-
-        // Settings panel header
-        const sh3 = $$('.settings-header h3');
-        setText(sh3, _t('settingsTitle'));
-
-        // Section titles
-        const sections = document.querySelectorAll('.section-title');
-        const sectionKeys = ['sectionImage', 'sectionQuality', 'sectionAgent', 'sectionModel'];
-        sections.forEach((sec, i) => {
-            if (i < sectionKeys.length && sec.childNodes.length > 1) {
-                sec.childNodes[1].textContent = ' ' + _t(sectionKeys[i]);
-            }
-        });
-
-        // Slider labels — update first span in each label
-        [
-            ['widthSlider', 'labelWidth'],
-            ['heightSlider', 'labelHeight'],
-            ['countSlider', 'labelCount'],
-            ['stepsSlider', 'labelSteps'],
-            ['guidanceSlider', 'labelGuidance'],
-            ['seedInput', 'labelSeed'],
-            ['maxIterSlider', 'labelMaxIter'],
-            ['modelProvider', 'labelProvider'],
-            ['modelName', 'labelModel'],
-            ['modelApiBase', 'labelApiBase'],
-            ['modelApiKey', 'labelApiKey'],
-            ['modelTemperature', 'labelTemperature'],
-        ].forEach(([forId, key]) => {
-            const el = document.querySelector(`[for="${forId}"] span:first-child`);
-            if (el) setText(el, _t(key));
-        });
-
-        // Checkbox labels
-        const updateCheckboxLabel = (forId, key) => {
-            const label = document.querySelector(`[for="${forId}"]`);
-            if (label && label.parentElement) {
-                const nodes = label.parentElement.childNodes;
-                for (const n of nodes) {
-                    if (n.nodeType === 3 && n.textContent.trim()) { n.textContent = _t(key); break; }
-                    if (n.nodeType === 1 && n.tagName === 'LABEL') {
-                        const labels = n.childNodes;
-                        for (const ln of labels) {
-                            if (ln.nodeType === 3 && ln.textContent.trim()) { ln.textContent = _t(key); break; }
-                        }
-                        break;
-                    }
-                }
-            }
-        };
-        updateCheckboxLabel('autoAcceptCb', 'labelAutoAccept');
-        updateCheckboxLabel('showIntermediateCb', 'labelShowIntermediate');
-
-        // Action buttons
-        setText($('applySettingsBtn'), _t('apply'));
-        setText($('resetSettingsBtn'), _t('reset'));
-
-        // Status bar
-        const status = $('chatStatus');
-        if (status && !AppState.isLoading) setText(status, _t('ready'));
-
-        // Welcome screen
-        const ws = $('welcomeScreen');
-        if (ws) {
-            const h1 = ws.querySelector('h1'); if (h1) setText(h1, _t('welcome'));
-            const p = ws.querySelector('p'); if (p) setText(p, _t('welcomeDesc'));
-        }
+        setText($('chatStatus'), _t('ready'));
 
         updateSettingsUI();
+        updateQuickParamsUI();
     },
 
     _formatContent(content) {

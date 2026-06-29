@@ -5,8 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
     <title>DrawAgent — AI 图像生成</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap">
     <link rel="stylesheet" href="css/style.css">
+    <style>
+        @font-face { font-family: 'Inter'; font-style: normal; font-weight: 300 700; font-display: swap;
+            src: local('Inter'), local('Segoe UI'), local('Arial'); }
+        @font-face { font-family: 'Noto Sans SC'; font-style: normal; font-weight: 300 700; font-display: swap;
+            src: local('Noto Sans SC'), local('Microsoft YaHei'), local('PingFang SC'), local('SimHei'), local('sans-serif'); }
+        body { font-family: 'Inter', 'Noto Sans SC', -apple-system, 'Microsoft YaHei', 'PingFang SC', sans-serif; }
+    </style>
 </head>
 <body>
     <div class="app-container">
@@ -32,8 +38,15 @@
                     <i class="fa-solid fa-sliders"></i>
                     <span>生成参数</span>
                 </button>
+                <button class="settings-btn" id="systemSettingsBtn">
+                    <i class="fa-solid fa-gear"></i>
+                    <span>系统设置</span>
+                </button>
             </div>
         </aside>
+
+        <!-- Mobile sidebar overlay mask -->
+        <div class="sidebar-mask" id="sidebarMask" onclick="if(document.getElementById('sidebar').classList.contains('mobile-open')){document.getElementById('sidebar').classList.remove('mobile-open');document.getElementById('sidebarMask').classList.remove('active');}"></div>
 
         <!-- Main Chat Area -->
         <main class="chat-area" id="chatArea">
@@ -49,10 +62,41 @@
                     <button class="header-btn lang-btn" id="langToggle" title="Switch Language / 切换语言">
                         <i class="fa-solid fa-language"></i>
                     </button>
+                    <button class="header-btn" id="exportSessionBtn" title="导出会话" style="display:none;">
+                        <i class="fa-solid fa-download"></i>
+                    </button>
                     <button class="header-btn" id="clearChatBtn" title="清空对话">
                         <i class="fa-solid fa-eraser"></i>
                     </button>
                 </div>
+            </div>
+
+            <!-- Quick Params Bar -->
+            <div class="quick-params-bar" id="quickParamsBar">
+                <div class="param-item">
+                    <label>宽</label><input type="number" id="qpWidth" value="1024" min="512" max="2048" step="64">
+                </div>
+                <div class="param-item">
+                    <label>高</label><input type="number" id="qpHeight" value="1024" min="512" max="2048" step="64">
+                </div>
+                <div class="param-item">
+                    <label>张数</label><input type="number" id="qpCount" value="2" min="1" max="4">
+                </div>
+                <div class="param-item">
+                    <label>步数</label><input type="number" id="qpSteps" value="8" min="4" max="20">
+                </div>
+                <div class="param-item">
+                    <label>引导</label><input type="number" id="qpGuidance" value="3.5" min="1" max="10" step="0.5">
+                </div>
+                <div class="param-item">
+                    <label>种子</label><input type="number" id="qpSeed" value="-1">
+                </div>
+                <div class="param-item">
+                    <label>轮数</label><input type="number" id="qpMaxIter" value="7" min="1" max="15">
+                </div>
+                <button class="param-toggle" id="paramsToggle" title="收起参数栏">
+                    <i class="fa-solid fa-chevron-up"></i>
+                </button>
             </div>
 
             <div class="messages-container" id="messagesContainer">
@@ -100,7 +144,7 @@
             </div>
         </main>
 
-        <!-- Settings Panel -->
+        <!-- Generation Params Panel (slide-in) -->
         <div class="settings-panel" id="settingsPanel">
             <div class="settings-header">
                 <h3>生成参数</h3>
@@ -165,32 +209,95 @@
                         </label>
                     </div>
                 </div>
-                <div class="setting-section">
-                    <div class="section-title"><i class="fa-solid fa-microchip"></i> 模型配置</div>
-                    <div class="slider-group">
-                        <label class="slider-label" for="modelProvider"><span>Provider</span><span></span></label>
-                        <input type="text" class="text-input" id="modelProvider" value="openai">
-                    </div>
-                    <div class="slider-group">
-                        <label class="slider-label" for="modelName"><span>模型</span><span></span></label>
-                        <input type="text" class="text-input" id="modelName" value="gpt-4o">
-                    </div>
-                    <div class="slider-group">
-                        <label class="slider-label" for="modelApiBase"><span>API Base URL</span><span></span></label>
-                        <input type="text" class="text-input" id="modelApiBase" value="https://api.openai.com/v1">
-                    </div>
-                    <div class="slider-group">
-                        <label class="slider-label" for="modelApiKey"><span>API Key</span><span></span></label>
-                        <input type="password" class="text-input" id="modelApiKey" placeholder="sk-...">
-                    </div>
-                    <div class="slider-group">
-                        <label class="slider-label" for="modelTemperature"><span>Temperature</span><span id="temperatureValue">0.7</span></label>
-                        <input type="range" class="slider" id="modelTemperature" min="0" max="1.5" step="0.1" value="0.7">
-                    </div>
-                </div>
                 <div class="settings-actions">
                     <button class="btn btn-primary" id="applySettingsBtn">应用</button>
                     <button class="btn btn-secondary" id="resetSettingsBtn">重置</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Settings Modal -->
+        <div class="modal-overlay" id="systemSettingsOverlay">
+            <div class="modal-container">
+                <div class="modal-header">
+                    <h3>系统设置</h3>
+                    <button class="modal-close" id="systemSettingsClose">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="setting-section">
+                        <div class="section-title"><i class="fa-solid fa-brain"></i> Agent A (主 LLM)</div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssProviderA"><span>Provider</span></label>
+                            <input type="text" class="text-input" id="ssProviderA" value="openai">
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssModelA"><span>模型</span></label>
+                            <input type="text" class="text-input" id="ssModelA" value="gpt-4o">
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssApiBaseA"><span>API Base URL</span></label>
+                            <input type="text" class="text-input" id="ssApiBaseA" value="https://api.openai.com/v1">
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssApiKeyA"><span>API Key</span></label>
+                            <input type="password" class="text-input" id="ssApiKeyA" placeholder="sk-...">
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssTemperatureA"><span>Temperature</span><span id="ssTempValueA">0.7</span></label>
+                            <input type="range" class="slider" id="ssTemperatureA" min="0" max="1.5" step="0.1" value="0.7">
+                        </div>
+                    </div>
+                    <div class="setting-section">
+                        <div class="section-title"><i class="fa-solid fa-paintbrush"></i> Agent B (生图模型)</div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssTypeB"><span>接入类型</span></label>
+                            <select class="text-input" id="ssTypeB">
+                                <option value="http">HTTP API</option>
+                                <option value="mcp">MCP</option>
+                            </select>
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssApiBaseB"><span>API Base URL</span></label>
+                            <input type="text" class="text-input" id="ssApiBaseB" value="http://localhost:8000">
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssEndpointB"><span>Endpoint</span></label>
+                            <input type="text" class="text-input" id="ssEndpointB" value="/api/generate">
+                        </div>
+                        <div class="slider-group" id="mcpFieldsB" style="display:none;">
+                            <label class="slider-label" for="ssMcpCommand"><span>MCP 命令</span></label>
+                            <input type="text" class="text-input" id="ssMcpCommand" placeholder="python -m zimage_mcp">
+                        </div>
+                    </div>
+                    <div class="setting-section">
+                        <div class="section-title"><i class="fa-solid fa-eye"></i> Agent C (视觉审查)</div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssProviderC"><span>Provider</span></label>
+                            <input type="text" class="text-input" id="ssProviderC" value="openai">
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssModelC"><span>模型</span></label>
+                            <input type="text" class="text-input" id="ssModelC" value="gpt-4o">
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssApiBaseC"><span>API Base URL</span></label>
+                            <input type="text" class="text-input" id="ssApiBaseC" value="https://api.openai.com/v1">
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssApiKeyC"><span>API Key</span></label>
+                            <input type="password" class="text-input" id="ssApiKeyC" placeholder="sk-...">
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssTemperatureC"><span>Temperature</span><span id="ssTempValueC">0.3</span></label>
+                            <input type="range" class="slider" id="ssTemperatureC" min="0" max="1.5" step="0.1" value="0.3">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" id="applySystemSettingsBtn">保存系统设置</button>
+                    <button class="btn btn-secondary" id="resetSystemSettingsBtn">重置</button>
                 </div>
             </div>
         </div>
@@ -213,6 +320,24 @@
                 <div class="viewer-info" id="viewerInfo">
                     <span id="viewerIndex">1/1</span>
                     <span id="viewerSeed">种子: -</span>
+                    <button class="viewer-download-btn" id="viewerDownload" title="下载">
+                        <i class="fa-solid fa-download"></i>
+                    </button>
+                    <button class="viewer-download-btn" id="viewerCopy" title="复制到剪贴板">
+                        <i class="fa-solid fa-copy"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Compare View Modal -->
+        <div class="compare-overlay" id="compareOverlay">
+            <div class="compare-container">
+                <div class="compare-header">
+                    <h3>迭代对比</h3>
+                    <button class="modal-close" id="compareClose"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="compare-body" id="compareBody">
                 </div>
             </div>
         </div>
@@ -230,6 +355,9 @@
             I18n.init();
             Renderer.refreshI18n();
             updateSettingsUI();
+            updateSystemSettingsUI();
+            updateQuickParamsUI();
+            syncQuickParams();
 
             const els = {
                 sidebar: document.getElementById('sidebar'),
@@ -238,20 +366,28 @@
                 settingsPanel: document.getElementById('settingsPanel'),
                 settingsClose: document.getElementById('settingsClose'),
                 settingsBtn: document.getElementById('settingsBtn'),
+                systemSettingsBtn: document.getElementById('systemSettingsBtn'),
+                systemSettingsOverlay: document.getElementById('systemSettingsOverlay'),
+                systemSettingsClose: document.getElementById('systemSettingsClose'),
                 newSessionBtn: document.getElementById('newSessionBtn'),
                 sendButton: document.getElementById('sendButton'),
                 promptInput: document.getElementById('promptInput'),
                 clearChatBtn: document.getElementById('clearChatBtn'),
+                exportSessionBtn: document.getElementById('exportSessionBtn'),
                 langToggle: document.getElementById('langToggle'),
                 acceptBtn: document.getElementById('acceptBtn'),
                 steerBtn: document.getElementById('steerBtn'),
                 pauseBtn: document.getElementById('pauseBtn'),
                 settingsApply: document.getElementById('applySettingsBtn'),
                 settingsReset: document.getElementById('resetSettingsBtn'),
+                applySystemSettingsBtn: document.getElementById('applySystemSettingsBtn'),
+                resetSystemSettingsBtn: document.getElementById('resetSystemSettingsBtn'),
                 viewerOverlay: document.getElementById('viewerOverlay'),
                 viewerClose: document.getElementById('viewerClose'),
                 viewerPrev: document.getElementById('viewerPrev'),
                 viewerNext: document.getElementById('viewerNext'),
+                viewerDownload: document.getElementById('viewerDownload'),
+                viewerCopy: document.getElementById('viewerCopy'),
                 randomSeedBtn: document.getElementById('randomSeedBtn'),
                 widthSlider: document.getElementById('widthSlider'),
                 heightSlider: document.getElementById('heightSlider'),
@@ -260,7 +396,12 @@
                 guidanceSlider: document.getElementById('guidanceSlider'),
                 maxIterSlider: document.getElementById('maxIterSlider'),
                 seedInput: document.getElementById('seedInput'),
-                modelTemperature: document.getElementById('modelTemperature'),
+                ssTemperatureA: document.getElementById('ssTemperatureA'),
+                ssTypeB: document.getElementById('ssTypeB'),
+                paramsToggle: document.getElementById('paramsToggle'),
+                quickParamsBar: document.getElementById('quickParamsBar'),
+                compareOverlay: document.getElementById('compareOverlay'),
+                compareClose: document.getElementById('compareClose'),
             };
 
             function toggleSidebar() {
@@ -272,7 +413,6 @@
             }
 
             els.sidebarToggle.addEventListener('click', toggleSidebar);
-            // sidebarToggleMobile expands sidebar when it's collapsed (both mobile and desktop)
             els.sidebarToggleMobile.addEventListener('click', () => {
                 if (els.sidebar.classList.contains('collapsed')) {
                     toggleSidebar();
@@ -283,6 +423,9 @@
 
             els.settingsBtn.addEventListener('click', () => els.settingsPanel.classList.add('active'));
             els.settingsClose.addEventListener('click', () => els.settingsPanel.classList.remove('active'));
+            els.systemSettingsBtn.addEventListener('click', () => els.systemSettingsOverlay.classList.add('active'));
+            els.systemSettingsClose.addEventListener('click', () => els.systemSettingsOverlay.classList.remove('active'));
+            els.systemSettingsOverlay.addEventListener('click', (e) => { if (e.target === els.systemSettingsOverlay) els.systemSettingsOverlay.classList.remove('active'); });
             els.newSessionBtn.addEventListener('click', () => AppActions.newSession());
 
             els.sendButton.addEventListener('click', () => AppActions.sendMessage());
@@ -295,13 +438,13 @@
                 if (confirm(_t('clearConfirm'))) { Renderer.clearMessages(); AppState.messages = []; }
             });
 
-            // Language toggle
+            els.exportSessionBtn.addEventListener('click', () => AppActions.exportSession());
+
             els.langToggle.addEventListener('click', () => {
                 I18n.toggleLang();
                 Renderer.refreshI18n();
                 Renderer.renderWelcome();
                 Renderer.showToast(I18n.getLang() === 'zh-CN' ? '已切换为中文' : 'Switched to English', 'info');
-                // Re-bind suggestion chips
                 document.querySelectorAll('.suggestion-chip').forEach(chip => {
                     chip.addEventListener('click', () => {
                         document.getElementById('promptInput').value = chip.textContent;
@@ -315,22 +458,107 @@
             els.pauseBtn.addEventListener('click', () => AppActions.pauseResume());
             els.settingsApply.addEventListener('click', () => AppActions.applySettings());
             els.settingsReset.addEventListener('click', () => AppActions.resetSettings());
+            els.applySystemSettingsBtn.addEventListener('click', () => AppActions.applySystemSettings());
+            els.resetSystemSettingsBtn.addEventListener('click', () => AppActions.resetSystemSettings());
 
             els.viewerClose.addEventListener('click', () => Viewer.close());
             els.viewerOverlay.addEventListener('click', (e) => { if (e.target === els.viewerOverlay) Viewer.close(); });
             els.viewerPrev.addEventListener('click', () => Viewer.prev());
             els.viewerNext.addEventListener('click', () => Viewer.next());
+            els.viewerDownload.addEventListener('click', () => Viewer.download());
+            els.viewerCopy.addEventListener('click', () => Viewer.copy());
             els.randomSeedBtn.addEventListener('click', () => { els.seedInput.value = Math.floor(Math.random() * 1000000); });
 
-            const sliderPairs = [[els.widthSlider,'widthValue'],[els.heightSlider,'heightValue'],[els.countSlider,'countValue'],[els.stepsSlider,'stepsValue'],[els.guidanceSlider,'guidanceValue'],[els.maxIterSlider,'maxIterValue'],[els.modelTemperature,'temperatureValue']];
+            els.paramsToggle.addEventListener('click', () => {
+                els.quickParamsBar.classList.toggle('collapsed');
+                const icon = els.paramsToggle.querySelector('i');
+                icon.classList.toggle('fa-chevron-up');
+                icon.classList.toggle('fa-chevron-down');
+            });
+
+            els.ssTypeB.addEventListener('change', () => {
+                document.getElementById('mcpFieldsB').style.display = els.ssTypeB.value === 'mcp' ? 'block' : 'none';
+            });
+
+            els.compareClose.addEventListener('click', () => els.compareOverlay.classList.remove('active'));
+            els.compareOverlay.addEventListener('click', (e) => { if (e.target === els.compareOverlay) els.compareOverlay.classList.remove('active'); });
+
+            const sliderPairs = [[els.widthSlider,'widthValue'],[els.heightSlider,'heightValue'],[els.countSlider,'countValue'],[els.stepsSlider,'stepsValue'],[els.guidanceSlider,'guidanceValue'],[els.maxIterSlider,'maxIterValue']];
             sliderPairs.forEach(([slider, displayId]) => slider.addEventListener('input', () => document.getElementById(displayId).textContent = slider.value));
             els.seedInput.addEventListener('input', () => {
                 const v = els.seedInput.value;
                 document.getElementById('seedValue').textContent = v === '-1' ? '-1 (' + _t('labelRandom') + ')' : v;
             });
+            els.ssTemperatureA.addEventListener('input', () => {
+                document.getElementById('ssTempValueA').textContent = els.ssTemperatureA.value;
+            });
+            const ssTemperatureC = document.getElementById('ssTemperatureC');
+            if (ssTemperatureC) ssTemperatureC.addEventListener('input', () => {
+                document.getElementById('ssTempValueC').textContent = ssTemperatureC.value;
+            });
+
+            // Quick params sync
+            ['qpWidth','qpHeight','qpCount','qpSteps','qpGuidance','qpSeed','qpMaxIter'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('change', () => {
+                        const p = AppState.settings.generationParams;
+                        switch (id) {
+                            case 'qpWidth': p.width = parseInt(el.value); break;
+                            case 'qpHeight': p.height = parseInt(el.value); break;
+                            case 'qpCount': p.numImages = parseInt(el.value); break;
+                            case 'qpSteps': p.steps = parseInt(el.value); break;
+                            case 'qpGuidance': p.guidance = parseFloat(el.value); break;
+                            case 'qpSeed': p.seed = parseInt(el.value) || -1; break;
+                            case 'qpMaxIter': AppState.settings.maxIterations = parseInt(el.value); break;
+                        }
+                        AppState.saveSettings();
+                        updateSettingsUI();
+                    });
+                }
+            });
 
             document.querySelectorAll('.suggestion-chip').forEach(chip => chip.addEventListener('click', () => { els.promptInput.value = chip.textContent; AppActions.sendMessage(); }));
             AppActions.refreshSessions();
+
+            // Keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                // Esc: cancel generation / close viewer / close panels
+                if (e.key === 'Escape') {
+                    if (Viewer.isOpen) { Viewer.close(); return; }
+                    if (document.getElementById('settingsPanel').classList.contains('active')) { document.getElementById('settingsPanel').classList.remove('active'); return; }
+                    if (document.getElementById('systemSettingsOverlay').classList.contains('active')) { document.getElementById('systemSettingsOverlay').classList.remove('active'); return; }
+                    if (AppState.isLoading) { AppActions.pauseResume(); return; }
+                }
+                // Ctrl+Shift+N: new session
+                if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'N') {
+                    e.preventDefault(); AppActions.newSession();
+                }
+            });
+
+            // Sidebar mobile mask
+            const mask = document.getElementById('sidebarMask');
+            const observer = new MutationObserver(() => {
+                mask.classList.toggle('active', els.sidebar.classList.contains('mobile-open'));
+            });
+            observer.observe(els.sidebar, { attributes: true, attributeFilter: ['class'] });
+
+            // Viewer pinch-zoom
+            let pinchStartDist = 0, pinchScale = 1;
+            document.getElementById('viewerImage').addEventListener('touchstart', (e) => {
+                if (e.touches.length === 2) pinchStartDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            });
+            document.getElementById('viewerImage').addEventListener('touchmove', (e) => {
+                if (e.touches.length === 2) {
+                    const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+                    pinchScale = Math.min(3, Math.max(0.5, dist / pinchStartDist));
+                    e.target.style.transform = `scale(${pinchScale})`;
+                }
+            });
+            document.getElementById('viewerImage').addEventListener('touchend', () => { e => e.target.style.transform = ''; });
+
+            // Request notification permission on first interaction
+            document.addEventListener('click', () => { AppActions.requestNotificationPermission(); }, { once: true });
         });
     </script>
 </body>

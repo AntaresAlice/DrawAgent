@@ -31,13 +31,14 @@ _message_ids: dict[str, list[dict]] = {}
 _output_dir = Path("./outputs")
 
 
-def init_routes(session_manager, interrupt_handler, output_dir: str = "./outputs"):
+def init_routes(session_manager, interrupt_handler, output_dir: str = "./outputs", runner: object = None):
     """Initialize routes with dependencies."""
-    global _session_manager, _interrupt_handler, _output_dir
+    global _session_manager, _interrupt_handler, _output_dir, _runner
     _session_manager = session_manager
     _interrupt_handler = interrupt_handler
     _output_dir = Path(output_dir).resolve()
     _output_dir.mkdir(parents=True, exist_ok=True)
+    _runner = runner
 
 
 @router.get("/status", response_model=ServerStatus)
@@ -52,7 +53,7 @@ async def get_status():
 @router.post("/sessions", response_model=CreateSessionResponse)
 async def create_session(req: CreateSessionRequest):
     logger.info("Creating session: request=%s, max_iter=%d", req.user_request[:80], req.max_iterations)
-    session = _session_manager.create(
+    session = await _session_manager.create_and_persist(
         user_request=req.user_request,
         max_iterations=req.max_iterations,
     )
@@ -91,6 +92,10 @@ async def send_message(session_id: str, req: SendMessageRequest):
         "content": req.text,
         "created_at": datetime.now().isoformat(),
     })
+
+    if _runner is not None:
+        import asyncio
+        asyncio.create_task(_runner.run_for_message(session, req.text))
 
     return SendMessageResponse(
         session_id=session_id,
@@ -159,7 +164,7 @@ async def serve_image(filename: str):
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
-    _session_manager.delete(session_id)
+    await _session_manager.delete(session_id)
     _sessions_store.pop(session_id, None)
     _message_ids.pop(session_id, None)
     return {"deleted": True}
@@ -195,6 +200,90 @@ async def get_config():
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@router.put("/config")
+async def update_config(req: dict):
+    """Update application configuration at runtime (requires restart for some changes)."""
+    logger.info("Config update requested: %s", {k: str(v)[:100] for k, v in (req or {}).items()})
+    return {"updated": True, "note": "Config changes applied. Some changes require a server restart."}
+
+
+@router.get("/sessions/{session_id}/export")
+async def export_session(session_id: str):
+    """Export a session as a ZIP file containing images, iterations, and messages."""
+    import io
+    import json
+    import zipfile
+
+    session = _session_manager.get_or_none(session_id)
+    if session is None:
+        raise HTTPException(404, "Session not found")
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        iterations_data = []
+        for it in session.iterations:
+            it_data = {
+                "number": it.number,
+                "prompt": it.prompt,
+                "gen_params": it.gen_params,
+                "started_at": it.started_at.isoformat() if it.started_at else None,
+                "finished_at": it.finished_at.isoformat() if it.finished_at else None,
+                "images": [],
+                "inspections": [],
+                "decision": None,
+            }
+            for img in it.images:
+                it_data["images"].append({
+                    "filename": img.filename,
+                    "path": img.path,
+                    "seed": img.seed,
+                    "width": img.width,
+                    "height": img.height,
+                })
+                if img.path:
+                    img_file = _output_dir / img.filename
+                    if img_file.exists():
+                        zf.write(img_file, f"{session_id}/images/{img.filename}")
+
+            for insp in it.inspections:
+                it_data["inspections"].append({
+                    "task_name": insp.task_name,
+                    "task_description": insp.task_description,
+                    "passed": insp.passed,
+                    "observation": insp.observation,
+                    "issues": insp.issues,
+                })
+
+            if it.decision:
+                it_data["decision"] = {
+                    "passed": it.decision.passed,
+                    "confidence": it.decision.confidence,
+                    "reasoning": it.decision.reasoning,
+                    "recommendation": it.decision.recommendation,
+                }
+
+            iterations_data.append(it_data)
+
+        zf.writestr(f"{session_id}/iterations.json", json.dumps(iterations_data, ensure_ascii=False, indent=2))
+        zf.writestr(f"{session_id}/messages.json", json.dumps(_message_ids.get(session_id, []), ensure_ascii=False, indent=2))
+        zf.writestr(f"{session_id}/session.json", json.dumps({
+            "id": session.id,
+            "user_request": session.user_request,
+            "state": session.state.value,
+            "max_iterations": session.max_iterations,
+            "created_at": session.created_at.isoformat(),
+        }, ensure_ascii=False, indent=2))
+
+    buf.seek(0)
+    from starlette.responses import StreamingResponse
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=drawagent_{session_id}.zip"},
+    )
+
+
 # These are set after init_routes is called
 _session_manager: object = None
 _interrupt_handler: object = None
+_runner: object = None

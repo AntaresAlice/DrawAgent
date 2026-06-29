@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -13,14 +15,17 @@ from .websocket import ws_manager
 def create_app(
     output_dir: str = "./outputs",
 ) -> FastAPI:
-    """FastAPI application factory.
+    """FastAPI application factory."""
 
-    Reference: opencode's Server HttpApi with modular routing.
-    """
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+
     app = FastAPI(
         title="DrawAgent API",
         version="0.1.0",
         description="AI-powered image generation agent system",
+        lifespan=lifespan,
     )
 
     app.add_middleware(
@@ -31,22 +36,15 @@ def create_app(
         allow_headers=["*"],
     )
 
-    # Wait for session_manager and interrupt_handler to be injected
-    # via init_routes() from main.py
-    @app.on_event("startup")
-    async def on_startup():
-        pass
-
     app.include_router(router)
 
-    # WebSocket endpoint
+    # WebSocket endpoint — handles interrupts, clarification confirmations
     @app.websocket("/ws/sessions/{session_id}")
     async def session_websocket(ws: WebSocket, session_id: str):
         await ws_manager.connect(session_id, ws)
         try:
             while True:
                 data = await ws.receive_text()
-                import json
                 msg = json.loads(data)
                 if msg.get("type") == "interrupt":
                     from .routes import _interrupt_handler, _session_manager
@@ -58,6 +56,20 @@ def create_app(
                                 msg["action"],
                                 msg.get("data"),
                             )
+                            # If steer message supplied, store it
+                            if msg.get("data", {}).get("message"):
+                                session.steer_message = msg["data"]["message"]
+                elif msg.get("type") in ("clarify_accept", "clarify_modify"):
+                    from .routes import _session_manager
+                    if _session_manager:
+                        session = _session_manager.get_or_none(session_id)
+                        if session:
+                            if msg["type"] == "clarify_modify":
+                                extra = msg.get("text", "")
+                                if extra:
+                                    session.user_request = (session.user_request or "") + " " + extra
+                            session.pending_action = "clarify_done"
+                            session.interrupt_event.set()
         except WebSocketDisconnect:
             pass
         finally:

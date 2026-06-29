@@ -42,10 +42,18 @@ class InspectImageTool(BaseTool):
         "required": ["image_path", "task_description"],
     }
 
-    def __init__(self, vision_provider: VisionProvider):
+    def __init__(self, vision_provider: VisionProvider | None = None):
         self.provider = vision_provider
 
     async def execute(self, args: dict, ctx: ToolContext) -> ToolResult:
+        if self.provider is None:
+            return ToolResult(
+                tool_call_id=ctx.tool_call_id or "",
+                name=self.name,
+                output="",
+                error="Vision provider (Agent C) is not configured. Please set up API Key in system settings.",
+            )
+
         image_path = args["image_path"]
         task_description = args["task_description"]
         context = args.get("context")

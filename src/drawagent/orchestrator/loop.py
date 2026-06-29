@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 
@@ -80,7 +81,22 @@ class InnerLoop:
 
         await self.events.emit(DrawEvent.ITERATION_STARTED, iteration=0)
 
+        compacted: CompactedHistory | None = None
+
         while True:
+            # ── Context compaction check ──
+            if len(self.session.iterations) > self.config.keep_recent_iterations + 1:
+                estimated_tokens = self._estimate_context_tokens()
+                if estimated_tokens > self.config.compaction_threshold_tokens:
+                    old_iters = self.session.iterations[:-self.config.keep_recent_iterations]
+                    compacted = CompactedHistory.from_iterations(
+                        old_iters, user_request=self.session.user_request
+                    )
+                    self.assembler.set_compacted_history(compacted)
+                    self.agent_a._compacted = compacted
+                    logger = __import__("logging").getLogger("drawagent.loop")
+                    logger.info("Context compacted: %d iterations → summary", len(old_iters))
+
             # ── Check interrupt before each iteration ──
             if self.session_mgr.is_interrupted(self.session):
                 action_result = await self._handle_interrupt()
@@ -96,10 +112,17 @@ class InnerLoop:
                     await self.events.emit(DrawEvent.USER_STEER, prompt=current_prompt)
                 if action_result == "rollback":
                     target = self._parse_rollback_target()
-                    iteration = target
-                    if self.images_history and target < len(self.images_history):
-                        # Could restore prompt from history
-                        pass
+                    if target < len(self.session.iterations):
+                        restored_iter = self.session.iterations[target]
+                        current_prompt = restored_iter.prompt
+                        self.observations_history = self.observations_history[:target]
+                        self.images_history = self.images_history[:target]
+                        iteration = target
+                        await self.events.emit(
+                            DrawEvent.USER_ROLLBACK,
+                            target=target,
+                            prompt=current_prompt,
+                        )
                     self.session_mgr.clear_interrupt(self.session)
 
             iteration += 1
@@ -115,6 +138,30 @@ class InnerLoop:
                 )
 
             await self.events.emit(DrawEvent.ITERATION_STARTED, iteration=iteration)
+
+            # ── Phase 0: CLARIFICATION (iteration 1 only) ──
+            if iteration == 1 and not self.session.iterations:
+                clarification = await self.agent_a.clarify_request(
+                    current_prompt=current_prompt,
+                )
+                if clarification:
+                    await self.events.emit(DrawEvent.A_QUESTION, text=clarification)
+                    # Pause loop until user confirms or modifies
+                    self.session_mgr.set_interrupt(self.session, "clarifying", None)
+                    self.session.interrupt_event.clear()
+                    # Wait for clarify_accept or clarify_modify via WebSocket
+                    try:
+                        await asyncio.wait_for(
+                            self.session.interrupt_event.wait(),
+                            timeout=120.0,
+                        )
+                    except asyncio.TimeoutError:
+                        pass
+                    self.session_mgr.clear_interrupt(self.session)
+                    # If user modified request, re-clarify on next iteration
+                    if self.session.pending_action != "clarify_done":
+                        self.session.pending_action = None
+                        continue
 
             # ── Phase 1: PLANNING ──
             self.session_mgr.transition(self.session, SessionState.PLANNING)
@@ -160,20 +207,34 @@ class InnerLoop:
             self.session_mgr.transition(self.session, SessionState.GENERATING)
             await self.events.emit(DrawEvent.GENERATION_STARTED)
 
-            gen_turn = await self.agent_a.run_turn(
-                messages=[
-                    LLMMessage(
-                        role="user",
-                        content=(
-                            f"Generate images for this prompt using the generate_image tool:\n\n"
-                            f"Prompt: {current_prompt}\n\n"
-                            f"Iteration: {iteration}/{self.config.max_iterations}\n\n"
-                            f"Call generate_image with appropriate parameters."
+            try:
+                gen_turn = await self.agent_a.run_turn(
+                    messages=[
+                        LLMMessage(
+                            role="user",
+                            content=(
+                                f"Generate images for this prompt using the generate_image tool:\n\n"
+                                f"Prompt: {current_prompt}\n\n"
+                                f"Iteration: {iteration}/{self.config.max_iterations}\n\n"
+                                f"Call generate_image with appropriate parameters."
+                            ),
                         ),
-                    ),
-                ],
-                enabled_tools={"generate_image"},
-            )
+                    ],
+                    enabled_tools={"generate_image"},
+                )
+            except Exception as gen_exc:
+                await self.events.emit(
+                    DrawEvent.ERROR,
+                    message=f"Generation phase failed: {gen_exc}",
+                )
+                if iteration == 1:
+                    current_prompt = f"{self.session.user_request} — high quality, detailed"
+                    continue
+                return LoopResult(
+                    terminated_reason="generation_error",
+                    final_images=self._extract_best_images(),
+                    iterations_completed=iteration,
+                )
 
             images = self._extract_images_from_tool_results(gen_turn.tool_results, current_prompt, iteration)
             self.images_history.append(images)
@@ -198,40 +259,68 @@ class InnerLoop:
                 if self.session_mgr.is_interrupted(self.session):
                     break
 
-                inspect_turn = await self.agent_a.run_turn(
-                    messages=[
-                        LLMMessage(
-                            role="user",
-                            content=(
-                                f"Inspect the generated images for this task:\n\n"
-                                f"Task: {task.get('name', 'inspect')}\n"
-                                f"Description: {task.get('description', '')}\n\n"
-                                f"Image paths: {[img.path for img in images]}\n\n"
-                                f"Call inspect_image with the first image and the task description."
-                            ),
-                        ),
-                    ],
-                    enabled_tools={"inspect_image"},
-                )
-
-                task_observation = ""
+                task_aggregate_observation = ""
                 task_passed = True
                 task_issues: list[str] = []
+                image_paths_text = "\n".join(
+                    f"  Image {i+1}: {img.path}" for i, img in enumerate(images)
+                )
 
-                for tr in inspect_turn.tool_results:
-                    if tr.success:
-                        task_observation = tr.output
-                        task_passed = "error" not in tr.output.lower() and "issue" not in tr.output.lower()
-                    else:
-                        task_observation = f"Inspection failed: {tr.error}"
+                for img_idx, image in enumerate(images):
+                    inspect_turn = await self.agent_a.run_turn(
+                        messages=[
+                            LLMMessage(
+                                role="user",
+                                content=(
+                                    f"Inspect the generated image for this task:\n\n"
+                                    f"Task: {task.get('name', 'inspect')}\n"
+                                    f"Description: {task.get('description', '')}\n\n"
+                                    f"Image to inspect: {image.path} (image {img_idx + 1}/{len(images)})\n"
+                                    f"All generated images:\n{image_paths_text}\n\n"
+                                    f"Call inspect_image with this image and the task description.\n"
+                                    f"After inspection, end your response with:\n"
+                                    f"VERDICT: PASS or VERDICT: FAIL\n"
+                                    f"If FAIL, list the specific issues found."
+                                ),
+                            ),
+                        ],
+                        enabled_tools={"inspect_image"},
+                    )
+
+                    img_observation = ""
+                    for tr in inspect_turn.tool_results:
+                        if tr.success:
+                            img_observation = tr.output
+                        else:
+                            task_issues.append(f"[Image {img_idx + 1}] Inspection failed: {tr.error}")
+                            task_passed = False
+
+                    agent_verdict = inspect_turn.text.upper()
+                    if "VERDICT: FAIL" in agent_verdict:
                         task_passed = False
-                        task_issues.append(tr.error or "")
+                        task_issues.append(f"[Image {img_idx + 1}] {img_observation[:200]}")
+                    elif "VERDICT: PASS" in agent_verdict:
+                        pass
+                    elif img_observation:
+                        negative_keywords = [
+                            "error:", "issue:", "incorrect", "missing", "distorted",
+                            "artifact", "blurry", "fused", "extra", "poor quality",
+                            "not present", "doesn't match", "failed to",
+                        ]
+                        if any(kw in img_observation.lower() for kw in negative_keywords):
+                            task_passed = False
+                            task_issues.append(f"[Image {img_idx + 1}] {img_observation[:200]}")
+
+                    if img_observation:
+                        task_aggregate_observation += (
+                            f"\n[Image {img_idx + 1}]: {img_observation}"
+                        )
 
                 result = InspectionTaskResult(
                     task_name=task.get("name", str(len(inspection_results))),
                     task_description=task.get("description", ""),
                     passed=task_passed,
-                    observation=task_observation or inspect_turn.text,
+                    observation=task_aggregate_observation.strip() or "No images to inspect",
                     issues=task_issues,
                 )
                 inspection_results.append(result)
@@ -268,7 +357,7 @@ class InnerLoop:
                 decision=decision,
                 finished_at=datetime.now(),
             )
-            self.session_mgr.add_iteration(self.session, iter_obj)
+            await self.session_mgr.add_iteration(self.session, iter_obj)
 
             self.observations_history.append(InspectionRecord(
                 iteration=iteration,
@@ -283,7 +372,11 @@ class InnerLoop:
                         DrawEvent.A_QUESTION,
                         text="Quality is acceptable but I'd like your confirmation. Accept?",
                     )
-                    # In API mode, this would pause; in CLI mode, continue
+                    return LoopResult(
+                        terminated_reason="awaiting_user",
+                        final_images=images,
+                        iterations_completed=iteration,
+                    )
                 else:
                     await self.events.emit(
                         DrawEvent.LOOP_TERMINATED,
@@ -297,9 +390,8 @@ class InnerLoop:
 
             # Check auto-accept threshold
             if (
-                decision.confidence >= 0.8
+                decision.confidence >= self.config.auto_accept_threshold / 10.0
                 and not decision.remaining_issues
-                and self.config.auto_accept_threshold <= 10.0
             ):
                 await self.events.emit(
                     DrawEvent.LOOP_TERMINATED,
@@ -340,6 +432,20 @@ class InnerLoop:
                 if images:
                     return images
         return []
+
+    def _estimate_context_tokens(self) -> int:
+        total_chars = 0
+        for it in self.session.iterations:
+            total_chars += len(it.prompt)
+            for insp in it.inspections:
+                total_chars += len(insp.observation or "")
+            if it.decision:
+                total_chars += len(it.decision.reasoning or "")
+        for obs in self.observations_history:
+            if obs.decision:
+                total_chars += len(obs.decision.reasoning or "")
+        total_chars += len(self.session.user_request or "")
+        return total_chars // 4
 
     def _extract_images_from_tool_results(
         self,

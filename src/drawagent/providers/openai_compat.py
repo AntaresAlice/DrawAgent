@@ -7,21 +7,54 @@ from typing import AsyncIterator
 import httpx
 
 from .base import LLMMessage, LLMProvider, LLMStreamEvent, VisionProvider
+from drawagent.core.errors import ProviderError
 
 
 class OpenAICompatibleProvider(LLMProvider, VisionProvider):
     """OpenAI-compatible API provider.
 
     Supports: OpenAI, Anthropic (via proxy), Qwen, DeepSeek, local vLLM/Ollama.
-
-    Reference: opencode's openai-compatible provider + streaming protocol.
     """
 
     def __init__(self, api_base: str, api_key: str, model: str, timeout: float = 120.0):
         self.api_base = api_base.rstrip("/")
         self.api_key = api_key
         self.model = model
-        self._client = httpx.AsyncClient(timeout=httpx.Timeout(timeout))
+        self._timeout = timeout
+        self._client: httpx.AsyncClient | None = None
+
+    async def _ensure_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=httpx.Timeout(self._timeout))
+        return self._client
+
+    async def __aenter__(self):
+        await self._ensure_client()
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
+    def _handle_error(self, exc: httpx.HTTPError, context: str = "") -> ProviderError:
+        msg = str(exc)
+        provider_name = "Agent"
+        if isinstance(exc, httpx.HTTPStatusError):
+            code = exc.response.status_code
+            if code == 401:
+                msg = f"API Key 无效或未授权 (HTTP 401) — 请检查 {context} 的 API Key 是否正确"
+            elif code == 403:
+                msg = f"API 访问被拒绝 (HTTP 403) — 请检查 {context} 的 API Key 权限"
+            elif code == 404:
+                msg = f"API 端点未找到 (HTTP 404) — 请检查 {context} 的 API Base URL: {self.api_base}"
+            elif code >= 500:
+                msg = f"API 服务器错误 (HTTP {code}) — 请稍后重试或检查 {context} 的 API Base URL"
+            else:
+                msg = f"API 请求失败 (HTTP {code}): {exc.response.text[:300]}"
+        elif isinstance(exc, httpx.ConnectError):
+            msg = f"无法连接到 API 服务器 — 请检查 {context} 的 API Base URL 是否可达: {self.api_base}"
+        elif isinstance(exc, httpx.TimeoutException):
+            msg = f"API 请求超时 — {context} 的 API Base URL 响应过慢: {self.api_base}"
+        return ProviderError(msg, provider=context, status_code=getattr(getattr(exc, 'response', None), 'status_code', None))
 
     async def chat_stream(
         self,
@@ -54,61 +87,65 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
         accumulated: dict[str, dict] = {}
         finish_reason: str | None = None
 
-        async with self._client.stream(
-            "POST",
-            f"{self.api_base}/chat/completions",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json=body,
-        ) as response:
-            async for line in response.aiter_lines():
-                if not line.startswith("data: "):
-                    continue
-                data_str = line[6:]
-                if data_str == "[DONE]":
-                    break
+        client = await self._ensure_client()
+        try:
+            async with client.stream(
+                "POST",
+                f"{self.api_base}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json=body,
+            ) as response:
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
 
-                data = json.loads(data_str)
-                choice = (data.get("choices") or [{}])[0]
-                delta = choice.get("delta") or {}
+                        data = json.loads(data_str)
+                        choice = (data.get("choices") or [{}])[0]
+                        delta = choice.get("delta") or {}
 
-                finish_reason = choice.get("finish_reason") or finish_reason
+                        finish_reason = choice.get("finish_reason") or finish_reason
 
-                if delta.get("content"):
-                    yield LLMStreamEvent(
-                        type="text_delta",
-                        content=delta["content"],
-                    )
+                        if delta.get("content"):
+                            yield LLMStreamEvent(
+                                type="text_delta",
+                                content=delta["content"],
+                            )
 
-                tool_calls = delta.get("tool_calls") or []
-                for tc in tool_calls:
-                    tc_id = tc.get("id") or ""
-                    fn = tc.get("function") or {}
+                        tool_calls = delta.get("tool_calls") or []
+                        for tc in tool_calls:
+                            tc_id = tc.get("id") or ""
+                            fn = tc.get("function") or {}
 
-                    if tc_id not in accumulated:
-                        accumulated[tc_id] = {"name": fn.get("name", ""), "arguments": ""}
-                        yield LLMStreamEvent(
-                            type="tool_call_start",
-                            tool_name=fn.get("name"),
-                            tool_call_id=tc_id,
-                        )
+                            if tc_id not in accumulated:
+                                accumulated[tc_id] = {"name": fn.get("name", ""), "arguments": ""}
+                                yield LLMStreamEvent(
+                                    type="tool_call_start",
+                                    tool_name=fn.get("name"),
+                                    tool_call_id=tc_id,
+                                )
 
-                    args_delta = fn.get("arguments") or ""
-                    if args_delta:
-                        accumulated[tc_id]["arguments"] += args_delta
-                        yield LLMStreamEvent(
-                            type="tool_call_args",
-                            content=args_delta,
-                            tool_name=accumulated[tc_id]["name"],
-                            tool_call_id=tc_id,
-                        )
+                            args_delta = fn.get("arguments") or ""
+                            if args_delta:
+                                accumulated[tc_id]["arguments"] += args_delta
+                                yield LLMStreamEvent(
+                                    type="tool_call_args",
+                                    content=args_delta,
+                                    tool_name=accumulated[tc_id]["name"],
+                                    tool_call_id=tc_id,
+                                )
 
-                if finish_reason:
-                    usage = data.get("usage")
-                    yield LLMStreamEvent(
-                        type="step_finish",
-                        finish_reason=finish_reason,
-                        usage=usage,
-                    )
+                        if finish_reason:
+                            usage = data.get("usage")
+                            yield LLMStreamEvent(
+                                type="step_finish",
+                                finish_reason=finish_reason,
+                                usage=usage,
+                            )
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+            raise self._handle_error(e, f"{self.model}") from e
 
     async def chat(
         self,
@@ -133,12 +170,17 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
         if tools:
             body["tools"] = tools
 
-        resp = await self._client.post(
-            f"{self.api_base}/chat/completions",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json=body,
-        )
-        return resp.json()["choices"][0]["message"]
+        client = await self._ensure_client()
+        try:
+            resp = await client.post(
+                f"{self.api_base}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json=body,
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+            raise self._handle_error(e, f"{self.model}") from e
 
     async def analyze_image(
         self,
@@ -158,16 +200,21 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
             "image_url": {"url": f"data:image/png;base64,{b64}"},
         })
 
-        resp = await self._client.post(
-            f"{self.api_base}/chat/completions",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={
-                "model": self.model,
-                "messages": [{"role": "user", "content": content}],
-                "max_tokens": kwargs.get("max_tokens", 2048),
-            },
-        )
-        return resp.json()["choices"][0]["message"]["content"]
+        client = await self._ensure_client()
+        try:
+            resp = await client.post(
+                f"{self.api_base}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": content}],
+                    "max_tokens": kwargs.get("max_tokens", 2048),
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+            raise self._handle_error(e, f"{self.model}") from e
 
     def _format_message(self, msg: LLMMessage) -> dict:
         formatted: dict = {"role": msg.role, "content": msg.content}
@@ -180,4 +227,6 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
         return formatted
 
     async def close(self) -> None:
-        await self._client.aclose()
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None

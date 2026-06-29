@@ -1,6 +1,5 @@
 /**
  * API module — HTTP + WebSocket communication.
- * Reference: webui_v6.html API pattern with DrawAgent event flow.
  */
 const API = {
     baseUrl() {
@@ -15,7 +14,9 @@ const API = {
         if (body) opts.body = JSON.stringify(body);
 
         const url = `${this.baseUrl()}${path}`;
-        console.debug('[API]', method, path, body ? JSON.stringify(body).slice(0, 200) : '');
+        const logBody = body ? JSON.parse(JSON.stringify(body)) : null;
+        if (logBody && logBody.data && logBody.data.apiKey) logBody.data = { ...logBody.data, apiKey: '***' };
+        console.debug('[API]', method, path, logBody ? JSON.stringify(logBody).slice(0, 200) : '');
         const resp = await fetch(url, opts);
         console.debug('[API]', resp.status, method, path);
         if (!resp.ok) {
@@ -79,6 +80,9 @@ const API = {
 const WSClient = {
     ws: null,
     sessionId: null,
+    reconnectAttempts: 0,
+    maxReconnectAttempts: 5,
+    reconnectDelay: 1000,
 
     connect(sessionId) {
         this.sessionId = sessionId;
@@ -96,9 +100,34 @@ const WSClient = {
             }
         };
 
-        this.ws.onopen = () => { console.debug('[WS] connected, session:', sessionId); };
-        this.ws.onclose = () => { console.debug('[WS] disconnected, session:', this.sessionId); };
-        this.ws.onerror = (e) => { console.error('WebSocket error:', e); };
+        this.ws.onopen = () => {
+            console.debug('[WS] connected, session:', sessionId);
+            this.reconnectAttempts = 0;
+            this.reconnectDelay = 1000;
+        };
+
+        this.ws.onclose = () => {
+            console.debug('[WS] disconnected, session:', this.sessionId);
+            this._tryReconnect();
+        };
+
+        this.ws.onerror = (e) => {
+            console.error('WebSocket error:', e);
+        };
+    },
+
+    _tryReconnect() {
+        if (!this.sessionId) return;
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.debug('[WS] max reconnect attempts reached');
+            return;
+        }
+        this.reconnectAttempts++;
+        const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+        console.debug('[WS] reconnecting in', delay, 'ms (attempt', this.reconnectAttempts, ')');
+        setTimeout(() => {
+            if (this.sessionId) this.connect(this.sessionId);
+        }, delay);
     },
 
     send(data) {
@@ -112,6 +141,7 @@ const WSClient = {
     },
 
     disconnect() {
+        this.reconnectAttempts = this.maxReconnectAttempts;
         if (this.ws) this.ws.close();
         this.ws = null;
     },

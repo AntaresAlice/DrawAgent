@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+# Re-export ImageRecord from core to avoid duplication
+from drawagent.core.types import ImageRecord  # noqa: F401
+
 
 @dataclass
 class SessionRecord:
@@ -53,35 +56,6 @@ class IterationRecord:
             decision=row["decision"],
             started_at=row["started_at"],
             finished_at=row["finished_at"],
-        )
-
-
-@dataclass
-class ImageRecord:
-    """Persistent image row."""
-
-    id: int | None = None
-    iteration_id: int = 0
-    filename: str = ""
-    path: str = ""
-    seed: int = -1
-    width: int = 1024
-    height: int = 1024
-    quality_score: float | None = None
-    has_artifact: bool = False
-
-    @classmethod
-    def from_row(cls, row: dict) -> ImageRecord:
-        return cls(
-            id=row["id"],
-            iteration_id=row["iteration_id"],
-            filename=row["filename"],
-            path=row["path"],
-            seed=row["seed"],
-            width=row["width"],
-            height=row["height"],
-            quality_score=row["quality_score"],
-            has_artifact=bool(row["has_artifact"]),
         )
 
 
