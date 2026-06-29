@@ -1,0 +1,9 @@
+# Fast preview generation preset — for rapid iteration
+# Usage: drawagent run --gen-params gen_presets/fast-preview.yaml "your prompt"
+
+width: 768
+height: 768
+steps: 4
+guidance: 2.5
+seed: -1
+num_images: 2

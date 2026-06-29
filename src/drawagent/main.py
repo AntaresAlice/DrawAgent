@@ -63,6 +63,8 @@ def main():
     run_p.add_argument("--user-input", type=str, default=None, dest="user_input", metavar="TEXT",
                        help="Inject a steering instruction at the current iteration")
     # Generation params
+    run_p.add_argument("--gen-params", type=str, default=None, metavar="PATH",
+                       help="Path to generation parameters preset YAML (merged into Agent B default_params)")
     run_p.add_argument("--max-iterations", type=int, default=None, metavar="N",
                        help="Maximum iterations (overrides config)")
     run_p.add_argument("--width", type=int, default=None, metavar="PX")
@@ -685,6 +687,18 @@ async def run_cli_noninteractive(args):
 
 def _apply_run_overrides(args, config):
     """Apply CLI --flags to config, overriding YAML values."""
+    gen = config.agent_b.default_params
+
+    # Load generation params preset from file (lowest priority, CLI flags override)
+    if getattr(args, "gen_params", None):
+        import yaml
+        preset_path = Path(args.gen_params)
+        if preset_path.exists():
+            with open(preset_path, encoding="utf-8") as f:
+                preset = yaml.safe_load(f) or {}
+            gen.update({k: v for k, v in preset.items() if not k.startswith("_")})
+            print(f"Gen params preset loaded: {args.gen_params} ({len(preset)} keys)")
+
     if args.max_iterations is not None:
         config.loop.max_iterations = args.max_iterations
 
