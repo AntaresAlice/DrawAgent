@@ -202,9 +202,17 @@ async def get_config():
 
 @router.put("/config")
 async def update_config(req: dict):
-    """Update application configuration at runtime (requires restart for some changes)."""
-    logger.info("Config update requested: %s", {k: str(v)[:100] for k, v in (req or {}).items()})
-    return {"updated": True, "note": "Config changes applied. Some changes require a server restart."}
+    """Update application configuration at runtime.
+
+    Accepts a dict with sections matching AppConfig fields
+    (agent_a, agent_b, agent_c). Updates runtime config and clears
+    cached providers so next request uses new settings.
+    """
+    logger.info("Config update requested: %s", {k: {sk: str(sv)[:100] for sk, sv in (v or {}).items()} for k, v in (req or {}).items()})
+    if _runner is not None:
+        _runner.update_config(req)
+        return {"updated": True, "note": "Config applied. Providers will be recreated on next request."}
+    return {"updated": False, "error": "Server runner not initialized"}
 
 
 @router.get("/sessions/{session_id}/export")

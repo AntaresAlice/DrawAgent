@@ -78,9 +78,12 @@ class GenerateImageTool(BaseTool):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._client: httpx.AsyncClient | None = None
         self._mcp_provider = None
-        if config.type == "mcp":
+
+    async def _get_mcp_provider(self):
+        if self._mcp_provider is None and self.config.type == "mcp":
             from drawagent.providers.mcp_provider import MCPProvider
-            self._mcp_provider = MCPProvider(config)
+            self._mcp_provider = MCPProvider(self.config)
+        return self._mcp_provider
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -94,8 +97,9 @@ class GenerateImageTool(BaseTool):
         await self.close()
 
     async def _ensure_mcp_connected(self) -> None:
-        if self._mcp_provider is not None and not self._mcp_provider._initialized:
-            await self._mcp_provider.connect()
+        mcp = await self._get_mcp_provider()
+        if mcp is not None and not mcp._initialized:
+            await mcp.connect()
 
     async def execute(self, args: dict, ctx: ToolContext) -> ToolResult:
         prompt = args["prompt"]
@@ -189,9 +193,11 @@ class GenerateImageTool(BaseTool):
         params: dict,
         index: int,
     ) -> Path:
+        mcp = await self._get_mcp_provider()
+        if mcp is None:
+            raise ImageGenerationError("MCP provider not configured. Set mcp_command or mcp_url in Agent B config.")
         await self._ensure_mcp_connected()
-        assert self._mcp_provider is not None
-        result = await self._mcp_provider.generate(prompt, negative_prompt, **params)
+        result = await mcp.generate(prompt, negative_prompt, **params)
 
         if isinstance(result, dict):
             image_data = None

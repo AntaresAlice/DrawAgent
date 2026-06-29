@@ -255,7 +255,7 @@ const AppActions = {
         Renderer.showToast(_t('settingsReset'), 'success');
     },
 
-    applySystemSettings() {
+    async applySystemSettings() {
         const mc = AppState.settings.systemConfig;
         mc.agentA = {
             provider: document.getElementById('ssProviderA').value,
@@ -279,7 +279,41 @@ const AppActions = {
         };
         AppState.saveSettings();
         document.getElementById('systemSettingsOverlay').classList.remove('active');
-        Renderer.showToast('系统设置已保存，重启服务后生效', 'info');
+
+        // Push config to backend so runtime uses new settings immediately
+        try {
+            const backendConfig = {
+                agent_a: {
+                    provider: mc.agentA.provider,
+                    model: mc.agentA.model,
+                    api_base: mc.agentA.apiBase,
+                    api_key: mc.agentA.apiKey || null,
+                    temperature: mc.agentA.temperature,
+                },
+                agent_b: {
+                    type: mc.agentB.type,
+                    api_base: mc.agentB.apiBase,
+                    endpoint: mc.agentB.endpoint,
+                    mcp_command: mc.agentB.mcpCommand ? mc.agentB.mcpCommand.split(/\s+/) : null,
+                },
+                agent_c: {
+                    provider: mc.agentC.provider,
+                    model: mc.agentC.model,
+                    api_base: mc.agentC.apiBase,
+                    api_key: mc.agentC.apiKey || null,
+                    temperature: mc.agentC.temperature,
+                },
+            };
+            const result = await API.updateConfig(backendConfig);
+            if (result.updated) {
+                Renderer.showToast('系统设置已保存并生效', 'success');
+            } else {
+                Renderer.showToast('设置已保存 (' + (result.note || '') + ')', 'info');
+            }
+        } catch (e) {
+            console.warn('Backend config sync failed:', e);
+            Renderer.showToast('设置已保存 (服务同步失败: ' + e.message + ')', 'warning');
+        }
     },
 
     resetSystemSettings() {

@@ -18,18 +18,67 @@ avoid dependency on real LLM APIs.
 ## How to Run Tests
 
 ```bash
-# All unit tests (no API keys needed)
-pytest tests/ --ignore=tests/test_integration.py -v
+# All unit tests (no API keys needed, ~3 seconds)
+pytest tests/ --ignore=tests/test_integration.py --ignore=tests/cli_test_runner.py -v
 
-# Provider-specific tests
+# API endpoint tests (no API keys needed, uses FastAPI TestClient)
+pytest tests/test_api.py -v
+
+# Provider-specific tests (no API keys needed)
 pytest tests/test_providers.py -v
 
 # Integration tests (also no API keys needed, uses mocks)
 pytest tests/test_integration.py -v
 
-# Full suite
-pytest tests/ -v
+# Full suite (97+ tests)
+pytest tests/ --ignore=tests/cli_test_runner.py -v
+
+# CLI test runner (requires running server)
+# Terminal 1:
+python -m drawagent serve --port 8000
+# Terminal 2:
+python tests/cli_test_runner.py
+python tests/cli_test_runner.py --full  # includes generation (needs API key)
 ```
+
+## CLI Test Runner
+
+`tests/cli_test_runner.py` exercises every API endpoint that the frontend UI uses,
+in the same order the frontend would call them. Use this to verify backend correctness
+before testing the frontend UI.
+
+```bash
+# Smoke test (no API key needed)
+python tests/cli_test_runner.py
+
+# Full test with DeepSeek
+set OPENAI_API_KEY=sk-xxx
+python tests/cli_test_runner.py --full
+
+# Test against custom port
+python tests/cli_test_runner.py --server http://127.0.0.1:8080 --full
+```
+
+### What it tests:
+1. Server status (/api/status)
+2. Session CRUD (create, list, get history, delete)
+3. Config GET/PUT (simulates switching to DeepSeek from frontend)
+4. Message send (accepted by server)
+5. Interrupt handling (pause, steer, accept)
+6. Export + cleanup
+7. Error scenarios (404s, invalid JSON)
+8. Config sync flow (frontend DeepSeek switch actually changes backend)
+
+## How the Config Sync Works (DeepSeek Switch Bug Fix)
+
+Previously, changing Agent A to DeepSeek in the UI only saved to localStorage
+— the backend still used OpenAI. Now:
+
+1. Frontend `applySystemSettings()` calls `PUT /api/config` with the new settings
+2. Backend `PUT /api/config` calls `ServerRunner.update_config()` 
+3. `update_config()` sets new values on the runtime `AppConfig` model
+4. Cached providers are cleared (`_provider_a = None, _provider_c = None`)
+5. Next message recreates providers with the new API base/key/model
 
 ## Integration/E2E Tests (Require API Keys)
 

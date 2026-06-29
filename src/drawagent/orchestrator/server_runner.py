@@ -157,3 +157,35 @@ class ServerRunner:
             task.cancel()
             return True
         return False
+
+    def update_config(self, config_dict: dict) -> None:
+        """Update runtime config from a dict (e.g., from frontend system settings).
+
+        Clears cached providers so the next message recreates them with new config.
+        """
+        for section_name, section_data in config_dict.items():
+            section = getattr(self.config, section_name, None)
+            if section is None:
+                logger.warning("Unknown config section: %s", section_name)
+                continue
+            for key, value in section_data.items():
+                if hasattr(section, key):
+                    setattr(section, key, value)
+                    logger.info("Config updated: %s.%s = %s", section_name, key, value if key != "api_key" else "***")
+        self._provider_a = None
+        self._provider_c = None
+        self._provider_init_attempted = False
+
+        # Reset Agent B MCP provider so it reconnects with new config
+        gen_tool = self.tool_registry.get("generate_image")
+        if gen_tool is not None and hasattr(gen_tool, "_mcp_provider"):
+            if gen_tool._mcp_provider is not None:
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                loop.create_task(gen_tool._mcp_provider.close())
+            gen_tool._mcp_provider = None
+
+        logger.info("Config updated, providers cleared for recreation")

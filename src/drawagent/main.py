@@ -95,7 +95,7 @@ async def run_server(args):
 
     async def broadcast_event(event_type, data):
         data_dict = dict(data) if not isinstance(data, dict) else data
-        session_id = data_dict.get("session_id") if isinstance(data_dict, dict) else None
+        session_id = data_dict.pop("session_id", None) if isinstance(data_dict, dict) else None
         if session_id:
             await ws_manager.broadcast(session_id, event_type if isinstance(event_type, str) else event_type.value, **data_dict)
 

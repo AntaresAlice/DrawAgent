@@ -72,6 +72,10 @@ const API = {
         return this.request('GET', '/api/status');
     },
 
+    async updateConfig(config) {
+        return this.request('PUT', '/api/config', config);
+    },
+
     imageUrl(filename) {
         return `${this.baseUrl()}/api/images/${filename}`;
     },
