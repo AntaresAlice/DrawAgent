@@ -61,6 +61,7 @@ class LoopConfig(BaseModel):
     auto_accept_threshold: float = 8.0
     compaction_threshold_tokens: int = 20000
     keep_recent_iterations: int = 2
+    step_mode: bool = False
 
 
 class MemoryConfig(BaseModel):

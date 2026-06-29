@@ -196,6 +196,85 @@ class SessionManager:
 
         return sessions
 
+    async def load_session(self, session_id: str) -> Session | None:
+        """Load a single session by ID from database with all iterations.
+
+        Returns None if session not found.
+        """
+        if self._db is None:
+            return None
+
+        row = await self._db.execute(
+            "SELECT * FROM sessions WHERE id = ?", (session_id,)
+        )
+        srows = await row.fetchall()
+        if not srows:
+            return None
+        srow = srows[0]
+
+        session = Session(
+            id=srow["id"],
+            created_at=datetime.fromisoformat(srow["created_at"]) if srow["created_at"] else datetime.now(),
+            user_request=srow["user_request"] or "",
+            max_iterations=srow["max_iterations"] or 7,
+        )
+        session.state = SessionState(srow["state"]) if srow["state"] else SessionState.IDLE
+
+        iter_rows = await self._db.execute(
+            "SELECT * FROM iterations WHERE session_id = ? ORDER BY number",
+            (session.id,),
+        )
+        for irow in await iter_rows.fetchall():
+            iteration = Iteration(
+                number=irow["number"],
+                prompt=irow["prompt"] or "",
+                gen_params=json.loads(irow["gen_params"]) if irow["gen_params"] else {},
+                started_at=datetime.fromisoformat(irow["started_at"]) if irow["started_at"] else datetime.now(),
+                finished_at=datetime.fromisoformat(irow["finished_at"]) if irow["finished_at"] else None,
+            )
+
+            if irow["decision"]:
+                d = json.loads(irow["decision"])
+                iteration.decision = QualityDecision(
+                    passed=d.get("passed", False),
+                    confidence=d.get("confidence", 0.5),
+                    reasoning=d.get("reasoning", ""),
+                    recommendation=d.get("recommendation", "iterate"),
+                )
+
+            img_rows = await self._db.execute(
+                "SELECT * FROM images WHERE iteration_id = ?", (irow["id"],)
+            )
+            for imrow in await img_rows.fetchall():
+                iteration.images.append(ImageRecord(
+                    filename=imrow["filename"] or "",
+                    path=imrow["path"] or "",
+                    iteration=iteration.number,
+                    seed=imrow["seed"] or -1,
+                    width=imrow["width"] or 1024,
+                    height=imrow["height"] or 1024,
+                    quality_score=imrow["quality_score"],
+                    has_critical_artifact=bool(imrow["has_artifact"]),
+                    prompt=iteration.prompt,
+                ))
+
+            insp_rows = await self._db.execute(
+                "SELECT * FROM inspections WHERE iteration_id = ?", (irow["id"],)
+            )
+            for insrow in await insp_rows.fetchall():
+                iteration.inspections.append(InspectionTaskResult(
+                    task_name=insrow["task_name"] or "",
+                    task_description=insrow["task_description"] or "",
+                    passed=bool(insrow["passed"]),
+                    observation=insrow["observation"] or "",
+                    issues=json.loads(insrow["issues"]) if insrow["issues"] else [],
+                ))
+
+            session.iterations.append(iteration)
+
+        self._sessions[session.id] = session
+        return session
+
     def set_interrupt(self, session: Session, action: str, message: str | None = None) -> None:
         session.pending_action = action
         session.steer_message = message

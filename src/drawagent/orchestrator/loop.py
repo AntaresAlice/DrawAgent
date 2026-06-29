@@ -33,10 +33,12 @@ class LoopResult:
         terminated_reason: str,
         final_images: list[ImageRecord] | None = None,
         iterations_completed: int = 0,
+        session_id: str = "",
     ):
         self.terminated_reason = terminated_reason
         self.final_images = final_images or []
         self.iterations_completed = iterations_completed
+        self.session_id = session_id
 
 
 class InnerLoop:
@@ -74,12 +76,30 @@ class InnerLoop:
         self.images_history: list[list[ImageRecord]] = []
         self.observations_history: list[InspectionRecord] = []
 
-    async def run(self, initial_prompt: str) -> LoopResult:
-        """Execute the inner loop until termination."""
-        iteration = 0
+    async def run(
+        self,
+        initial_prompt: str,
+        start_iteration: int = 0,
+        step_mode: bool | None = None,
+    ) -> LoopResult:
+        """Execute the inner loop until termination.
+
+        Args:
+            initial_prompt: The user's request text
+            start_iteration: For resume — iteration to start from (0 = from beginning)
+            step_mode: Override config.step_mode for this run (None = use config default)
+        """
+        _step_mode = step_mode if step_mode is not None else self.config.step_mode
+        iteration = start_iteration
         current_prompt = initial_prompt
 
-        await self.events.emit(DrawEvent.ITERATION_STARTED, iteration=0)
+        # If resuming from an existing session, reconstruct state
+        if start_iteration > 0 and not self.images_history:
+            iteration, current_prompt = self.reconstruct_state(
+                current_prompt=initial_prompt,
+            )
+
+        await self.events.emit(DrawEvent.ITERATION_STARTED, iteration=iteration)
 
         compacted: CompactedHistory | None = None
 
@@ -403,8 +423,109 @@ class InnerLoop:
                     iterations_completed=iteration,
                 )
 
+            # ── Step mode pause (after iteration saved, before next iteration) ──
+            if _step_mode:
+                action = await self._wait_for_step(iteration)
+                if action == "accept":
+                    await self.events.emit(
+                        DrawEvent.LOOP_TERMINATED,
+                        reason="user_accepted",
+                    )
+                    return LoopResult(
+                        terminated_reason="user_accepted",
+                        final_images=images,
+                        iterations_completed=iteration,
+                        session_id=self.session.id,
+                    )
+                if action == "steer":
+                    current_prompt = self.session.steer_message or current_prompt
+                    await self.events.emit(DrawEvent.USER_STEER, prompt=current_prompt)
+                if action == "rollback":
+                    target = max(0, len(self.session.iterations) - 2)
+                    if target < len(self.session.iterations):
+                        restored_iter = self.session.iterations[target]
+                        current_prompt = restored_iter.prompt
+                        self.observations_history = self.observations_history[:target]
+                        self.images_history = self.images_history[:target]
+                        iteration = target
+                        await self.events.emit(DrawEvent.USER_ROLLBACK, target=target, prompt=current_prompt)
+                if action == "quit":
+                    return LoopResult(
+                        terminated_reason="user_quit",
+                        final_images=self._extract_best_images(),
+                        iterations_completed=iteration,
+                        session_id=self.session.id,
+                    )
+
+    def reconstruct_state(self, iterations: list[Iteration] | None = None, current_prompt: str | None = None) -> tuple[int, str]:
+        """Reconstruct inner loop state from persisted iteration data.
+
+        Call this before run() when resuming a session. Rebuilds
+        images_history and observations_history from the session's
+        iteration list so the loop continues where it left off.
+
+        Args:
+            iterations: Optional override (defaults to session.iterations)
+            current_prompt: Optional override (defaults to last iteration's prompt)
+
+        Returns:
+            (iteration, current_prompt) — starting point for the loop
+        """
+        its = iterations if iterations is not None else self.session.iterations
+        if not its:
+            return 0, current_prompt or self.session.user_request
+
+        # Rebuild histories from persisted iterations
+        self.images_history = []
+        self.observations_history = []
+        for it in its:
+            self.images_history.append(it.images)
+            self.observations_history.append(InspectionRecord(
+                iteration=it.number,
+                prompt=it.prompt,
+                tasks=it.inspections,
+                decision=it.decision,
+            ))
+
+        prompt = current_prompt or its[-1].prompt
+        return its[-1].number, prompt
+
+    async def _wait_for_step(self, iteration: int) -> str:
+        """Pause after an iteration completes, waiting for user to advance.
+
+        Returns: 'continue', 'accept', 'steer', 'quit', 'rollback'
+        """
+        await self.events.emit(DrawEvent.USER_INTERRUPT,
+                               message=f"Iteration {iteration} complete — waiting for user",
+                               session_id=self.session.id)
+        self.session_mgr.set_interrupt(self.session, "step_paused", None)
+        self.session.interrupt_event.clear()
+
+        try:
+            await asyncio.wait_for(
+                self.session.interrupt_event.wait(),
+                timeout=600.0,
+            )
+        except asyncio.TimeoutError:
+            self.session_mgr.clear_interrupt(self.session)
+            return "continue"
+
+        action = self.session.pending_action
+        self.session_mgr.clear_interrupt(self.session)
+        if action in ("next", "step", "continue"):
+            return "continue"
+        if action == "accept":
+            return "accept"
+        if action == "steer":
+            return "steer"
+        if action == "rollback":
+            return "rollback"
+        if action == "quit":
+            return "quit"
+        return "continue"
+
     async def _handle_interrupt(self) -> str:
-        """Handle pending interrupt. Returns 'terminate', 'steer', 'rollback', or 'continue'."""
+        """Handle pending interrupt. Returns 'terminate', 'steer', 'rollback', 'continue', or 'accept'."""
         action = self.session.pending_action
         if action == "accept":
             return "terminate"
@@ -416,6 +537,10 @@ class InnerLoop:
             return "rollback"
         if action == "pause":
             self.session.state = SessionState.INTERRUPTED
+        if action in ("step", "next", "continue"):
+            return "continue"
+        if action == "step_paused":
+            return "continue"
         return "continue"
 
     def _parse_rollback_target(self) -> int:

@@ -1,5 +1,33 @@
 # DrawAgent 工程开发计划 v1.0
 
+## Changelog
+
+### 2026-06-29 — Session Resume + Step-by-Step Execution
+**新增功能：断点续传 & 单步执行**
+
+- **Session Resume (断点继续)**: CLI 支持 `--resume <session_id>` 从数据库恢复未完成的 session 继续执行
+  - `--from-iteration N`: 指定从第 N 轮开始
+  - `--rerun-last`: 重新执行最后一轮（调试用）
+  - `--db <path>`: 启用 SQLite 持久化（CLI 模式默认不持久化）
+  - `SessionManager.load_session(id)`: 从 DB 加载单个 session（含全部 iterations/images/inspections/decisions）
+  - `InnerLoop.reconstruct_state()`: 从 persisted iterations 重建 images_history/observations_history
+  - `InnerLoop.run(start_iteration=N)`: 支持从指定轮数开始执行
+
+- **Step-by-Step Mode (单步执行)**: CLI `--step` 标志启用，每轮迭代后暂停等待用户操作
+  - 命令: `/next` (Enter) 继续 | `/accept` 接受当前 | `/steer <msg>` 修改方向 | `/rollback` 回退 | `/quit` 退出
+  - `InnerLoop._wait_for_step()`: 内部暂停机制，通过 EventBus 的 USER_INTERRUPT 事件触发 CLI 用户交互
+  - `LoopConfig.step_mode: bool = False`: 配置开关
+
+- **关键变量/接口**:
+  - `LoopResult`: 新增 `session_id` 字段，用于 CLI 回传 session ID
+  - `InnerLoop.run(initial_prompt, start_iteration=0, step_mode=None)`: 扩展签名
+  - `DrawEvent.USER_INTERRUPT`: 新增事件类型，用于 step mode 暂停通知
+  - CLI step mode 通过 `asyncio.run_in_executor(input)` 在 USER_INTERRUPT handler 中读取用户输入
+
+- **测试**: `tests/test_resume_step.py` (15 tests) — 覆盖 reconstruct_state, _wait_for_step, load_session, full resume flow
+
+---
+
 > 基于 DESIGN.md v2.1 | 参考 opencode 代码模式 | 参考 webui_v6.html UI 模式
 
 ---
