@@ -297,3 +297,99 @@ class MagicMock:
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             setattr(self, k, v)
+
+
+class TestRunModeOverrides:
+    """Test _apply_run_overrides in main.py."""
+
+    def test_override_max_iterations(self):
+        from drawagent.main import _apply_run_overrides
+        from drawagent.config.schema import AppConfig
+
+        config = AppConfig()
+        config.loop.max_iterations = 7
+
+        args = MagicMock(
+            max_iterations=3, width=None, height=None, steps=None,
+            guidance=None, seed=None,
+            model_a=None, api_key_a=None, api_base_a=None, temperature_a=None,
+            model_c=None, api_key_c=None, api_base_c=None, temperature_c=None,
+            agent_b_type=None, agent_b_url=None, agent_b_endpoint=None,
+            mcp_command=None,
+        )
+        _apply_run_overrides(args, config)
+        assert config.loop.max_iterations == 3
+
+    def test_override_agent_a(self):
+        from drawagent.main import _apply_run_overrides
+        from drawagent.config.schema import AppConfig, AgentAConfig
+
+        config = AppConfig(agent_a=AgentAConfig(model="gpt-4o", api_key=None, api_base="https://openai.com/v1", temperature=0.7))
+        args = MagicMock(
+            max_iterations=None, width=None, height=None, steps=None,
+            guidance=None, seed=None,
+            model_a="deepseek-chat", api_key_a="sk-test", api_base_a="https://deepseek.com/v1", temperature_a=0.5,
+            model_c=None, api_key_c=None, api_base_c=None, temperature_c=None,
+            agent_b_type=None, agent_b_url=None, agent_b_endpoint=None,
+            mcp_command=None,
+        )
+        _apply_run_overrides(args, config)
+        assert config.agent_a.model == "deepseek-chat"
+        assert config.agent_a.api_key == "sk-test"
+        assert config.agent_a.api_base == "https://deepseek.com/v1"
+        assert config.agent_a.temperature == 0.5
+
+    def test_override_image_params(self):
+        from drawagent.main import _apply_run_overrides
+        from drawagent.config.schema import AppConfig
+
+        config = AppConfig()
+        args = MagicMock(
+            max_iterations=None, width=512, height=768, steps=10,
+            guidance=5.0, seed=12345,
+            model_a=None, api_key_a=None, api_base_a=None, temperature_a=None,
+            model_c=None, api_key_c=None, api_base_c=None, temperature_c=None,
+            agent_b_type=None, agent_b_url=None, agent_b_endpoint=None,
+            mcp_command=None,
+        )
+        _apply_run_overrides(args, config)
+        gen = config.agent_b.default_params
+        assert gen["width"] == 512
+        assert gen["height"] == 768
+        assert gen["steps"] == 10
+        assert gen["guidance"] == 5.0
+        assert gen["seed"] == 12345
+
+    def test_override_agent_b_mcp(self):
+        from drawagent.main import _apply_run_overrides
+        from drawagent.config.schema import AppConfig
+
+        config = AppConfig()
+        args = MagicMock(
+            max_iterations=None, width=None, height=None, steps=None,
+            guidance=None, seed=None,
+            model_a=None, api_key_a=None, api_base_a=None, temperature_a=None,
+            model_c=None, api_key_c=None, api_base_c=None, temperature_c=None,
+            agent_b_type=None, agent_b_url=None, agent_b_endpoint=None,
+            mcp_command="python mcp_server.py",
+        )
+        _apply_run_overrides(args, config)
+        assert config.agent_b.mcp_command == ["python", "mcp_server.py"]
+        assert config.agent_b.type == "mcp"
+
+    def test_none_params_dont_override(self):
+        from drawagent.main import _apply_run_overrides
+        from drawagent.config.schema import AppConfig, AgentAConfig
+
+        config = AppConfig(agent_a=AgentAConfig(model="gpt-4o", temperature=0.7))
+        args = MagicMock(
+            max_iterations=None, width=None, height=None, steps=None,
+            guidance=None, seed=None,
+            model_a=None, api_key_a=None, api_base_a=None, temperature_a=None,
+            model_c=None, api_key_c=None, api_base_c=None, temperature_c=None,
+            agent_b_type=None, agent_b_url=None, agent_b_endpoint=None,
+            mcp_command=None,
+        )
+        _apply_run_overrides(args, config)
+        assert config.agent_a.model == "gpt-4o"
+        assert config.agent_a.temperature == 0.7

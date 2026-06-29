@@ -22,7 +22,7 @@ class ConfigLoader:
     ENV_VAR_RE = re.compile(r"\$\{([^}]+)\}")
 
     @classmethod
-    async def load(cls, project_dir: Path | None = None) -> AppConfig:
+    async def load(cls, project_dir: Path | None = None, config_file: str | Path | None = None) -> AppConfig:
         configs: list[dict] = []
 
         # Layer 1: package default
@@ -35,18 +35,24 @@ class ConfigLoader:
         if user_config.exists():
             configs.append(cls._load_file(user_config))
 
-        # Layer 3: project directory (walk upward)
-        search_dir = project_dir or Path.cwd()
-        for parent in [search_dir, *search_dir.parents]:
-            found = False
-            for name in cls.DISCOVERY_NAMES:
-                f = parent / name
-                if f.exists():
-                    configs.append(cls._load_file(f))
-                    found = True
+        # Layer 3: project directory (walk upward) — skipped if explicit file given
+        if config_file is None:
+            search_dir = project_dir or Path.cwd()
+            for parent in [search_dir, *search_dir.parents]:
+                found = False
+                for name in cls.DISCOVERY_NAMES:
+                    f = parent / name
+                    if f.exists():
+                        configs.append(cls._load_file(f))
+                        found = True
+                        break
+                if found:
                     break
-            if found:
-                break
+        else:
+            # Layer 4: explicit config file (highest priority)
+            explicit = Path(config_file)
+            if explicit.exists():
+                configs.append(cls._load_file(explicit))
 
         merged = cls._deep_merge(configs)
         return AppConfig(**merged)

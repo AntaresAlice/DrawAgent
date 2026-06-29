@@ -96,3 +96,30 @@ class TestConfigLoader:
         cfg = await ConfigLoader.load(project_dir=tmp_path)
         assert isinstance(cfg, AppConfig)
         assert cfg.agent_a.model == "gpt-4o"
+
+    @pytest.mark.asyncio
+    async def test_load_with_explicit_config_file(self, tmp_path):
+        """--config flag: explicit config file is highest priority layer."""
+        config_file = tmp_path / "custom.yaml"
+        config_file.write_text("""
+agent_a:
+  model: custom-model
+  temperature: 0.1
+agent_c:
+  model: custom-vision
+""")
+        cfg = await ConfigLoader.load(project_dir=tmp_path, config_file=str(config_file))
+        assert cfg.agent_a.model == "custom-model"
+        assert cfg.agent_a.temperature == 0.1
+        assert cfg.agent_c.model == "custom-vision"
+        # Other defaults preserved
+        assert cfg.agent_a.api_base == "https://api.openai.com/v1"
+
+    @pytest.mark.asyncio
+    async def test_load_with_missing_config_file(self, tmp_path):
+        """Explicit config file that doesn't exist is silently skipped."""
+        cfg = await ConfigLoader.load(
+            project_dir=tmp_path,
+            config_file=str(tmp_path / "nonexistent.yaml"),
+        )
+        assert cfg.agent_a.model == "gpt-4o"

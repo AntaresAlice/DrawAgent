@@ -20,12 +20,14 @@ def main():
     serve_p.add_argument("--port", type=int, default=8000)
     serve_p.add_argument("--host", type=str, default="127.0.0.1")
     serve_p.add_argument("--output-dir", type=str, default="./outputs")
-    serve_p.add_argument("--config", type=str, default=None)
+    serve_p.add_argument("--config", type=str, default=None, metavar="PATH",
+                         help="Path to config YAML file (highest priority overrides)")
 
-    # cli
+    # cli (interactive)
     cli_p = sub.add_parser("cli", help="Run interactive CLI mode")
     cli_p.add_argument("--output-dir", type=str, default="./outputs")
-    cli_p.add_argument("--config", type=str, default=None)
+    cli_p.add_argument("--config", type=str, default=None, metavar="PATH",
+                       help="Path to config YAML file (highest priority overrides)")
     cli_p.add_argument("--resume", type=str, default=None, metavar="SESSION_ID",
                        help="Resume a session from the database")
     cli_p.add_argument("--from-iteration", type=int, default=0, metavar="N",
@@ -37,12 +39,63 @@ def main():
     cli_p.add_argument("--db", type=str, default=None,
                        help="Enable session persistence to SQLite DB path")
 
+    # run (non-interactive, one-shot)
+    run_p = sub.add_parser("run", help="Non-interactive one-shot generation")
+    run_p.add_argument("prompt", nargs="?", default=None, help="The image generation request")
+    run_p.add_argument("--prompt", type=str, default=None, dest="prompt_text",
+                       help="Prompt text (alternative to positional)")
+    run_p.add_argument("--negative-prompt", type=str, default="", dest="negative_prompt",
+                       help="Negative prompt")
+    run_p.add_argument("--output-dir", type=str, default="./outputs")
+    run_p.add_argument("--config", type=str, default=None, metavar="PATH",
+                       help="Path to config YAML file (highest priority overrides)")
+    run_p.add_argument("--db", type=str, default=None,
+                       help="SQLite database path for session persistence")
+    run_p.add_argument("--resume", type=str, default=None, metavar="SESSION_ID",
+                       help="Resume a session from the database instead of creating new")
+    run_p.add_argument("--from-iteration", type=int, default=0, metavar="N",
+                       help="Start from iteration N when resuming")
+    run_p.add_argument("--rerun-last", action="store_true",
+                       help="When resuming, re-run the last completed iteration")
+    # Generation params
+    run_p.add_argument("--max-iterations", type=int, default=None, metavar="N",
+                       help="Maximum iterations (overrides config)")
+    run_p.add_argument("--width", type=int, default=None, metavar="PX",
+                       help="Image width in pixels (512-2048)")
+    run_p.add_argument("--height", type=int, default=None, metavar="PX",
+                       help="Image height in pixels (512-2048)")
+    run_p.add_argument("--steps", type=int, default=None, metavar="N",
+                       help="Diffusion inference steps (1-50)")
+    run_p.add_argument("--guidance", type=float, default=None, metavar="N",
+                       help="CFG guidance scale (0.0-20.0)")
+    run_p.add_argument("--seed", type=int, default=None, metavar="N",
+                       help="Random seed (-1 for random)")
+    run_p.add_argument("--num-images", type=int, default=None, metavar="N",
+                       help="Images per iteration (1-4)")
+    # Agent overrides
+    run_p.add_argument("--model-a", type=str, default=None, help="Agent A model name")
+    run_p.add_argument("--api-key-a", type=str, default=None, help="Agent A API key")
+    run_p.add_argument("--api-base-a", type=str, default=None, help="Agent A API base URL")
+    run_p.add_argument("--temperature-a", type=float, default=None, help="Agent A temperature")
+    run_p.add_argument("--model-c", type=str, default=None, help="Agent C model name")
+    run_p.add_argument("--api-key-c", type=str, default=None, help="Agent C API key")
+    run_p.add_argument("--api-base-c", type=str, default=None, help="Agent C API base URL")
+    run_p.add_argument("--temperature-c", type=float, default=None, help="Agent C temperature")
+    run_p.add_argument("--agent-b-type", type=str, default=None, choices=["http", "mcp"],
+                       help="Agent B backend type")
+    run_p.add_argument("--agent-b-url", type=str, default=None, help="Agent B API base URL")
+    run_p.add_argument("--agent-b-endpoint", type=str, default=None, help="Agent B API endpoint")
+    run_p.add_argument("--mcp-command", type=str, default=None,
+                       help="Agent B MCP command (e.g. 'python mcp_server.py')")
+
     args = parser.parse_args()
 
     if args.command == "serve":
         asyncio.run(run_server(args))
     elif args.command == "cli":
         asyncio.run(run_cli(args))
+    elif args.command == "run":
+        asyncio.run(run_cli_noninteractive(args))
     else:
         parser.print_help()
 
@@ -66,7 +119,7 @@ async def run_server(args):
     from drawagent.memory.index import MemoryIndex
     from drawagent.orchestrator.server_runner import ServerRunner
 
-    config = await ConfigLoader.load(Path.cwd())
+    config = await ConfigLoader.load(Path.cwd(), config_file=args.config)
     event_bus = EventBus()
 
     db = Database()
@@ -147,7 +200,7 @@ async def run_cli(args):
     from drawagent.tools.human_input import AskUserTool
     from drawagent.persistence.database import Database
 
-    config = await ConfigLoader.load(Path.cwd())
+    config = await ConfigLoader.load(Path.cwd(), config_file=args.config)
     print("=" * 60)
     print("  DrawAgent CLI v0.1.0")
     print(f"  Agent A: {config.agent_a.model}")
@@ -389,6 +442,201 @@ async def run_cli(args):
 
     if db:
         await db.close()
+
+
+async def run_cli_noninteractive(args):
+    """Non-interactive one-shot generation mode."""
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
+    from datetime import datetime
+
+    from drawagent.config.loader import ConfigLoader
+    from drawagent.core.events import DrawEvent, EventBus
+    from drawagent.core.types import Session
+    from drawagent.orchestrator.interrupt import InterruptHandler
+    from drawagent.orchestrator.session import SessionManager
+    from drawagent.agents.agent_a import AgentA
+    from drawagent.config.schema import AgentBConfig, LoopConfig
+    from drawagent.context.assembler import ContextAssembler
+    from drawagent.providers.factory import ProviderFactory
+    from drawagent.tools.base import ToolRegistry
+    from drawagent.tools.generate_image import GenerateImageTool
+    from drawagent.tools.inspect_image import InspectImageTool
+    from drawagent.persistence.database import Database
+
+    # Load config
+    config = await ConfigLoader.load(Path.cwd(), config_file=args.config)
+
+    # Apply CLI overrides to config
+    _apply_run_overrides(args, config)
+
+    # Optional DB
+    db = None
+    if args.db or args.resume:
+        db_path = args.db or "~/.drawagent/sessions.db"
+        db = Database(Path(db_path).expanduser())
+        await db.connect()
+
+    session_mgr = SessionManager(db=db)
+    interrupt_handler = InterruptHandler()
+    event_bus = EventBus()
+
+    # Minimal event listeners
+    async def on_error(evt_type, data):
+        print(f"Error: {data.get('message', 'unknown')}", file=sys.stderr)
+
+    event_bus.on(DrawEvent.ERROR, on_error)
+
+    # Create providers
+    try:
+        provider_a = ProviderFactory.create_agent_a(config.agent_a)
+        provider_c = ProviderFactory.create_agent_c(config.agent_c)
+    except Exception as e:
+        print(f"Failed to create providers: {e}", file=sys.stderr)
+        print("Set OPENAI_API_KEY or use --api-key-a / --api-key-c", file=sys.stderr)
+        sys.exit(1)
+
+    registry = ToolRegistry()
+    gen_tool = GenerateImageTool(config=config.agent_b, output_dir=args.output_dir)
+    inspect_tool = InspectImageTool(vision_provider=provider_c)
+    registry.register(gen_tool)
+    registry.register(inspect_tool)
+
+    # Session
+    start_iteration = 0
+    prompt = args.prompt_text or args.prompt or ""
+
+    if args.resume:
+        if db is None:
+            print("Error: --resume requires --db", file=sys.stderr)
+            sys.exit(1)
+        session = await session_mgr.load_session(args.resume)
+        if session is None:
+            print(f"Session {args.resume} not found", file=sys.stderr)
+            sys.exit(1)
+
+        if args.from_iteration > 0:
+            start_iteration = args.from_iteration
+            session.iterations = session.iterations[:start_iteration]
+        elif args.rerun_last and session.iterations:
+            start_iteration = max(0, len(session.iterations) - 1)
+            session.iterations = session.iterations[:start_iteration]
+        else:
+            start_iteration = len(session.iterations)
+
+        if not prompt:
+            prompt = session.user_request
+    else:
+        if not prompt:
+            print("Error: prompt is required. Usage: drawagent run 'your prompt'", file=sys.stderr)
+            sys.exit(1)
+        session = Session(
+            id=f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            user_request=prompt,
+            max_iterations=config.loop.max_iterations,
+        )
+        if db:
+            await session_mgr.persist_session(session)
+
+    agent_a = AgentA(provider=provider_a, tool_registry=registry, session=session)
+    assembler = ContextAssembler(agent_b_config=config.agent_b)
+
+    from drawagent.orchestrator.loop import InnerLoop
+
+    loop = InnerLoop(
+        session=session,
+        agent_a=agent_a,
+        tool_registry=registry,
+        session_manager=session_mgr,
+        interrupt_handler=interrupt_handler,
+        assembler=assembler,
+        event_bus=event_bus,
+        config=config.loop,
+    )
+
+    print(f"Generating: \"{prompt[:80]}{'...' if len(prompt)>80 else ''}\"")
+    print(f"  Agent A: {config.agent_a.model} @ {config.agent_a.api_base}")
+    print(f"  Agent B: {config.agent_b.type} @ {config.agent_b.api_base}{config.agent_b.endpoint}")
+    print(f"  Agent C: {config.agent_c.model} @ {config.agent_c.api_base}")
+    if start_iteration > 0:
+        print(f"  Resume: iteration {start_iteration + 1}")
+    print(f"  Max iterations: {config.loop.max_iterations}")
+    gen = config.agent_b.default_params
+    print(f"  Image: {gen.get('width', 1024)}x{gen.get('height', 1024)}, "
+          f"steps={gen.get('steps', 8)}, guidance={gen.get('guidance', 3.5)}")
+    print("-" * 50)
+
+    try:
+        result = await loop.run(
+            initial_prompt=prompt,
+            start_iteration=start_iteration,
+            step_mode=False,
+        )
+        print(f"Result: {result.terminated_reason}")
+        print(f"Iterations: {result.iterations_completed}")
+        if result.final_images:
+            print("Images:")
+            for img in result.final_images:
+                print(f"  {img.path}")
+        else:
+            print("No images generated.")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    finally:
+        if db:
+            await db.close()
+
+
+def _apply_run_overrides(args, config):
+    """Apply CLI --flags to config, overriding YAML values."""
+    if args.max_iterations is not None:
+        config.loop.max_iterations = args.max_iterations
+
+    gen = config.agent_b.default_params
+    if args.width is not None:
+        gen["width"] = args.width
+    if args.height is not None:
+        gen["height"] = args.height
+    if args.steps is not None:
+        gen["steps"] = args.steps
+    if args.guidance is not None:
+        gen["guidance"] = args.guidance
+    if args.seed is not None:
+        gen["seed"] = args.seed
+
+    # Agent A overrides
+    if args.model_a is not None:
+        config.agent_a.model = args.model_a
+    if args.api_key_a is not None:
+        config.agent_a.api_key = args.api_key_a
+    if args.api_base_a is not None:
+        config.agent_a.api_base = args.api_base_a
+    if args.temperature_a is not None:
+        config.agent_a.temperature = args.temperature_a
+
+    # Agent C overrides
+    if args.model_c is not None:
+        config.agent_c.model = args.model_c
+    if args.api_key_c is not None:
+        config.agent_c.api_key = args.api_key_c
+    if args.api_base_c is not None:
+        config.agent_c.api_base = args.api_base_c
+    if args.temperature_c is not None:
+        config.agent_c.temperature = args.temperature_c
+
+    # Agent B overrides
+    if args.agent_b_type is not None:
+        config.agent_b.type = args.agent_b_type
+    if args.agent_b_url is not None:
+        config.agent_b.api_base = args.agent_b_url
+    if args.agent_b_endpoint is not None:
+        config.agent_b.endpoint = args.agent_b_endpoint
+    if args.mcp_command is not None:
+        config.agent_b.mcp_command = args.mcp_command.split()
+        config.agent_b.type = "mcp"
 
 
 if __name__ == "__main__":
