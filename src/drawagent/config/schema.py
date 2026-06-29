@@ -32,6 +32,7 @@ class AgentBConfig(BaseModel):
     mcp_command: list[str] | None = None
     mcp_url: str | None = None
     mcp_tool_name: str = "generate_image"
+    mcp_keep_alive: bool = True  # False = close MCP after generation (frees VRAM, reconnects next iter)
 
     default_params: dict = Field(default_factory=lambda: {
         "width": 1024,

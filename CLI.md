@@ -305,6 +305,7 @@ agent_b:
   # MCP 模式：
   # type: mcp
   # mcp_command: ["python", "mcp_server.py"]
+  # mcp_keep_alive: false        # false = 每次生成后关闭 MCP 释放显存（与本地 Ollama 共用 GPU 时推荐）
   default_params:
     width: 1024
     height: 1024

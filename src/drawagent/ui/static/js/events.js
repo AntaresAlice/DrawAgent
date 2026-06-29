@@ -269,6 +269,7 @@ const AppActions = {
             apiBase: document.getElementById('ssApiBaseB').value,
             endpoint: document.getElementById('ssEndpointB').value,
             mcpCommand: document.getElementById('ssMcpCommand').value,
+            mcpKeepAlive: document.getElementById('ssMcpKeepAlive').checked,
         };
         mc.agentC = {
             provider: document.getElementById('ssProviderC').value,
@@ -295,6 +296,7 @@ const AppActions = {
                     api_base: mc.agentB.apiBase,
                     endpoint: mc.agentB.endpoint,
                     mcp_command: mc.agentB.mcpCommand ? mc.agentB.mcpCommand.split(/\s+/) : null,
+                    mcp_keep_alive: Boolean(mc.agentB.mcpKeepAlive),
                 },
                 agent_c: {
                     provider: mc.agentC.provider,
@@ -319,7 +321,7 @@ const AppActions = {
     resetSystemSettings() {
         AppState.settings.systemConfig = {
             agentA: { provider: 'openai', model: 'gpt-4o', apiBase: 'https://api.openai.com/v1', apiKey: '', temperature: 0.7 },
-            agentB: { type: 'http', apiBase: 'http://localhost:8000', endpoint: '/api/generate', mcpCommand: '' },
+            agentB: { type: 'http', apiBase: 'http://localhost:8000', endpoint: '/api/generate', mcpCommand: '', mcpKeepAlive: true },
             agentC: { provider: 'openai', model: 'gpt-4o', apiBase: 'https://api.openai.com/v1', apiKey: '', temperature: 0.3 },
         };
         AppState.saveSettings();
@@ -380,6 +382,8 @@ function updateSystemSettingsUI() {
     document.getElementById('ssTempValueA').textContent = ma.temperature;
     set('ssTypeB', mb.type); set('ssApiBaseB', mb.apiBase);
     set('ssEndpointB', mb.endpoint); set('ssMcpCommand', mb.mcpCommand);
+    const mcpKeepEl = document.getElementById('ssMcpKeepAlive');
+    if (mcpKeepEl) mcpKeepEl.checked = mb.mcpKeepAlive !== false;
     document.getElementById('mcpFieldsB').style.display = mb.type === 'mcp' ? 'block' : 'none';
     set('ssProviderC', mc_.provider); set('ssModelC', mc_.model);
     set('ssApiBaseC', mc_.apiBase); set('ssApiKeyC', mc_.apiKey);

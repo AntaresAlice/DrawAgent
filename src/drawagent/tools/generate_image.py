@@ -146,6 +146,13 @@ class GenerateImageTool(BaseTool):
                 })
 
         success_count = sum(1 for img in images_info if "error" not in img)
+
+        # If mcp_keep_alive is False, close MCP process to free VRAM
+        # (stdio mode only — for GPU-sharing setups with local Ollama etc.)
+        if not self.config.mcp_keep_alive and self._mcp_provider is not None:
+            await self._mcp_provider.close()
+            self._mcp_provider = None
+
         if success_count == 0:
             return ToolResult(
                 tool_call_id=ctx.tool_call_id or "",
