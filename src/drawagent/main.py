@@ -525,10 +525,9 @@ async def run_cli_noninteractive(args):
         if db is None:
             print("Error: --resume requires --db", file=sys.stderr)
             sys.exit(1)
-        session = await session_mgr.load_session(args.resume)
-        if session is None:
+        source = await session_mgr.load_session(args.resume)
+        if source is None:
             print(f"Session {args.resume} not found in database", file=sys.stderr)
-            # List available
             all_s = await session_mgr.load_all()
             if all_s:
                 print("Available sessions:")
@@ -536,45 +535,50 @@ async def run_cli_noninteractive(args):
                     print(f"  {s.id[:16]}... | {s.user_request[:40]}... | {len(s.iterations)} iters")
             sys.exit(1)
 
-        original_session_id = session.id
-
-        # --from-iteration: 0=auto(resume from last), -1=same as 0, N=from N
-        if args.from_iteration > 0:
-            start_iteration = args.from_iteration
-            session.iterations = session.iterations[:start_iteration]
-        elif args.from_iteration == 0:
-            start_iteration = len(session.iterations)  # last completed
-
+        original_session_id = source.id
         if not prompt:
-            prompt = session.user_request
+            prompt = source.user_request
 
-        # --fork: copy session state to new session
+        # ── Step 1: Fork (instantaneous copy) ──
         if args.fork:
-            fork_id = f"fork-{session.id[:12]}-{datetime.now().strftime('%H%M%S')}"
-            forked = Session(
+            fork_id = f"fork-{source.id[:12]}-{datetime.now().strftime('%H%M%S')}"
+            session = Session(
                 id=fork_id,
-                user_request=session.user_request,
-                max_iterations=session.max_iterations,
+                user_request=source.user_request,
+                max_iterations=source.max_iterations,
             )
-            forked.iterations = list(session.iterations)
-            session = forked
+            session.iterations = list(source.iterations)
             if db:
                 await session_mgr.persist_session(session)
                 for it in session.iterations:
                     await session_mgr.add_iteration(session, it)
-            print(f"Forked session: {fork_id}")
-            print(f"  Parent: {original_session_id[:16]}...")
+            print(f"Forked: {source.id[:16]}... -> {fork_id}")
+            print(f"  (original session untouched)")
+            # Fork without explicit --steps: just fork, no execution
+            if step_limit is None:
+                step_limit = -1  # sentinel: pure fork
+        else:
+            session = source
+            print(f"Session: {source.id[:16]}...")
+            # Resume without --steps: 1 step (debug mode default)
+            if step_limit is None:
+                step_limit = 1
 
-        # --user-input: inject steering instruction
+        # ── Step 2: Trim iterations to starting point ──
+        if args.from_iteration > 0:
+            start_iteration = args.from_iteration
+            print(f"  Trimming to iteration {start_iteration} (removing iterations {start_iteration}+)")
+            session.iterations = session.iterations[:start_iteration]
+        elif args.from_iteration == 0:
+            start_iteration = len(session.iterations)
+
+        # ── Step 3: Inject user input ──
         if args.user_input:
             session.pending_action = "steer"
             session.steer_message = args.user_input
-            print(f"User input: \"{args.user_input[:80]}\"")
-
-        # Default step_limit for resume: 1 step (debug mode)
-        if step_limit is None:
-            step_limit = 1
+            print(f"  User input: \"{args.user_input[:80]}\"")
     else:
+        # New session
         if not prompt:
             print("Error: prompt required. Usage: drawagent run 'your prompt'", file=sys.stderr)
             sys.exit(1)
@@ -585,12 +589,38 @@ async def run_cli_noninteractive(args):
         )
         if db:
             await session_mgr.persist_session(session)
+        print(f"Session: {session.id[:16]}...")
+        # New session without --steps: run all (None = unlimited)
+        # step_limit stays None
 
-    # --steps 0 means unlimited
+    # ── Print execution plan ──
+    print(f"Prompt:  \"{prompt[:80]}{'...' if len(prompt)>80 else ''}\"")
+    print(f"  Agent A: {config.agent_a.model} @ {config.agent_a.api_base}")
+    print(f"  Agent B: {config.agent_b.type} @ {config.agent_b.api_base}{config.agent_b.endpoint}")
+    print(f"  Agent C: {config.agent_c.model} @ {config.agent_c.api_base}")
+    gen = config.agent_b.default_params
+    print(f"  Image: {gen.get('width', 1024)}x{gen.get('height', 1024)}, "
+          f"steps={gen.get('steps', 8)}, guidance={gen.get('guidance', 3.5)}")
+    if start_iteration > 0:
+        print(f"  Start:  iteration {start_iteration} (have {len(session.iterations)} completed)")
+    if step_limit == -1:
+        print(f"  Steps:  0 (fork only, no execution)")
+    elif step_limit is None:
+        print(f"  Steps:  until termination (max {config.loop.max_iterations})")
+    else:
+        print(f"  Steps:  {step_limit} iteration(s)")
+    print("-" * 50)
+
+    # Handle --steps 0 (user explicitly wants unlimited)
     if step_limit == 0:
         step_limit = None
+    if step_limit == -1:
+        print("Fork complete. No steps executed.")
+        if db:
+            await db.close()
+        return
 
-    # ── Run ──
+    # ── Execute ──
     agent_a = AgentA(provider=provider_a, tool_registry=registry, session=session)
     assembler = ContextAssembler(agent_b_config=config.agent_b)
 

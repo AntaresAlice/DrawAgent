@@ -33,33 +33,26 @@ drawagent run "a cat" --config my_config.yaml
 
 ## 一、`drawagent run` — 非交互式单步/多步执行（调试核心）
 
-设计目标：类似 gdb 的调试体验，可以精确控制从哪个 session 的哪一步开始，
-执行多少步，注入用户指令，fork 出新 session。
+设计目标：类似 gdb，精确定位到任意 session 的任意迭代，执行可控步数，
+注入用户指令，Fork 分支探索。
 
-### 基本用法
+### 核心语义（消除歧义）
 
-```bash
-# 新 session，执行直到终止
-drawagent run "a beautiful sunset"
+**执行顺序永远是：Fork（可选）→ Trim 迭代 → 注入指令 → Execute 步数**
 
-# 新 session，只执行 1 步
-drawagent run "a beautiful sunset" --steps 1
+| 操作 | 作用对象 | 说明 |
+|------|---------|------|
+| `--resume <id>` | 加载已有 session | 从 DB 加载，不指定 `--steps` 时默认执行 **1 步** |
+| `--fork` | 要求 `--resume` | 从原 session **复制**出新 session，原 session **不动** |
+| `--from-iteration N` | 目标 session | 裁掉迭代 N 及之后的内容 |
+| `--user-input TEXT` | 目标 session | 在下一轮注入用户指令，LLM 重新解析 |
+| `--steps N` | 目标 session | 执行 N 轮（0=不限） |
 
-# 恢复 session，执行 1 步（debug 默认）
-drawagent run --db ~/.drawagent/debug.db --resume <session_id>
-
-# 恢复并从指定迭代开始，执行 3 步
-drawagent run --db ~/.drawagent/debug.db --resume <id> --from-iteration 2 --steps 3
-```
-
-### 执行控制参数
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--steps N` | 新 session=全部, resume=1 | 执行 N 轮迭代后停止（0=全部） |
-| `--from-iteration N` | 0=最后完成 | 从第 N 轮开始（跳过前 N-1 轮） |
-| `--fork` | false | Fork 出新 session，不修改原 session |
-| `--user-input TEXT` | 无 | 在当前迭代注入用户指令（LLM 会重新解析） |
+**关键规则**：
+- `--fork` 不加 `--steps` → **只 Fork 不执行**（0 步）
+- `--fork` 加 `--steps N` → **先 Fork，再在 Fork 出的 session 上执行 N 步**
+- 不加 `--fork` → **直接操作原 session**
+- `--steps 0` → 不限步数，直到终止
 
 ### 完整参数列表
 
@@ -74,19 +67,27 @@ drawagent run --db ~/.drawagent/debug.db --resume <id> --from-iteration 2 --step
 ### 典型调试工作流
 
 ```bash
-# 1. 持久化生成一次
+# 1. 生成一次
 drawagent run "a warrior princess portrait" --db debug.db
-# 输出: Session: run-20260629-...
 
-# 2. 回到第1轮，注入新指令，看 LLM 如何调整
-drawagent run --db debug.db --resume run-20260629-... \
-  --from-iteration 1 --user-input "make armor more ornate" --steps 1
+# 2. 回到第2轮（裁掉2+），注入新指令，只跑1步看 LLM 如何调整
+drawagent run --db debug.db --resume run-xxx --from-iteration 2 \
+  --user-input "make armor more ornate"
 
-# 3. Fork 一个新 session，基于旧 session 的第 2 轮开始探索
-drawagent run --db debug.db --resume run-20260629-... \
-  --from-iteration 2 --fork --user-input "change to nighttime scene" --steps 2
+# 3. 从第2轮 Fork 新 session 再跑（原 session 被保护）
+drawagent run --db debug.db --resume run-xxx --from-iteration 2 \
+  --fork --steps 1
 
-# 4. 在 fork 的 session 上继续
+# 4. Fork 一个新 session 并立即注入指令跑 2 步
+drawagent run --db debug.db --resume run-xxx --fork \
+  --user-input "change to nighttime scene" --steps 2
+
+# 5. 纯 Fork（不执行）— 得到一个分叉点，稍后再操作
+drawagent run --db debug.db --resume run-xxx --fork
+# 输出: Forked: run-20260629... -> fork-run-2026...
+#       Fork complete. No steps executed.
+
+# 6. 在 Fork 出的 session 上继续
 drawagent run --db debug.db --resume fork-run-2026... --steps 1
 ```
 
