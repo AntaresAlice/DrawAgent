@@ -15,12 +15,17 @@ from drawagent.core.types import (
     InspectionRecord,
     InspectionTaskResult,
     Iteration,
-    QualityDecision,
-    Session,
     SessionState,
 )
+from drawagent.tools.base import ToolRegistry
 from drawagent.orchestrator.interrupt import InterruptHandler
 from drawagent.orchestrator.session import SessionManager
+
+_LOOP_LOG = __import__("logging").getLogger("drawagent.loop")
+
+
+# Maximum wait for user step acknowledgment (seconds)
+STEP_WAIT_TIMEOUT = 300
 from drawagent.providers.base import LLMMessage
 from drawagent.tools.base import ToolRegistry
 
@@ -230,6 +235,7 @@ class InnerLoop:
 
             # ── Phase 3: GENERATING ──
             self.session_mgr.transition(self.session, SessionState.GENERATING)
+            print(f"  [Loop] Phase 3 GENERATING: prompt=\"{current_prompt[:80]}...\"", flush=True)
             await self.events.emit(DrawEvent.GENERATION_STARTED)
 
             try:
@@ -262,6 +268,12 @@ class InnerLoop:
                 )
 
             images = self._extract_images_from_tool_results(gen_turn.tool_results, current_prompt, iteration)
+            print(f"  [Loop] Got {len(images)} image(s) from {len(gen_turn.tool_results)} tool result(s)")
+            if gen_turn.tool_results:
+                for tr in gen_turn.tool_results:
+                    if getattr(tr, "error", None):
+                        print(f"  [Loop] Tool error: {tr.error[:200]}")
+                        _LOOP_LOG.warning("  Tool error: %s", tr.error[:300])
             self.images_history.append(images)
             await self.events.emit(DrawEvent.IMAGES_READY, images=images)
 

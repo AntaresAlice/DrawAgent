@@ -116,11 +116,17 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
 
                         tool_calls = delta.get("tool_calls") or []
                         for tc in tool_calls:
-                            tc_id = tc.get("id") or ""
+                            tc_idx = tc.get("index", 0)
                             fn = tc.get("function") or {}
 
-                            if tc_id not in accumulated:
-                                accumulated[tc_id] = {"name": fn.get("name", ""), "arguments": ""}
+                            # Use index-based key for dedup (OpenAI/DSS: id only in first chunk)
+                            if tc_idx not in accumulated:
+                                tc_id = tc.get("id") or ""
+                                accumulated[tc_idx] = {
+                                    "name": fn.get("name", ""),
+                                    "arguments": "",
+                                    "id": tc_id,
+                                }
                                 yield LLMStreamEvent(
                                     type="tool_call_start",
                                     tool_name=fn.get("name"),
@@ -129,12 +135,13 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
 
                             args_delta = fn.get("arguments") or ""
                             if args_delta:
-                                accumulated[tc_id]["arguments"] += args_delta
+                                entry = accumulated[tc_idx]
+                                entry["arguments"] += args_delta
                                 yield LLMStreamEvent(
                                     type="tool_call_args",
                                     content=args_delta,
-                                    tool_name=accumulated[tc_id]["name"],
-                                    tool_call_id=tc_id,
+                                    tool_name=entry["name"],
+                                    tool_call_id=entry["id"],
                                 )
 
                         if finish_reason:

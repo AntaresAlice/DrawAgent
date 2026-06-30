@@ -87,29 +87,26 @@ class AgentA:
         ):
             if event.type == "text_delta":
                 text_parts.append(event.content)
-                if stream_callback:
-                    await stream_callback.__anext__()  # noqa: typing escape
-
             elif event.type == "tool_call_start":
                 if event.tool_call_id:
                     accumulated[event.tool_call_id] = {
                         "name": event.tool_name or "",
                         "arguments": "",
                     }
-
             elif event.type == "tool_call_args":
                 if event.tool_call_id and event.tool_call_id in accumulated:
                     accumulated[event.tool_call_id]["arguments"] += event.content
-
             elif event.type == "step_finish":
                 finish_reason = event.finish_reason
 
         text = "".join(text_parts)
+        print(f"  [AgentA] finish={finish_reason}, text={len(text)}ch, tool_calls={len(accumulated)}", flush=True)
 
         for call_id, acc in accumulated.items():
             if acc["arguments"]:
                 tool_calls_accumulated.append({
                     "id": call_id,
+                    "type": "function",
                     "function": {
                         "name": acc["name"],
                         "arguments": acc["arguments"],
@@ -118,10 +115,22 @@ class AgentA:
 
         tool_results: list[ToolResult] = []
         if tool_calls_accumulated:
+            print(f"  [AgentA] Calling {tool_calls_accumulated[0]['function']['name']}("
+                  f"{tool_calls_accumulated[0]['function']['arguments'][:120]}...)", flush=True)
             tool_results = await materialization.settle(
                 tool_calls_accumulated,
                 ToolContext(session_id=self.session.id, agent="A"),
             )
+            for tr in tool_results:
+                if tr.error:
+                    print(f"  [AgentA] Tool ERROR: {tr.error[:200]}", flush=True)
+
+            # OpenAI/DeepSeek requires assistant msg with tool_calls before tool msgs
+            messages.append(LLMMessage(
+                role="assistant",
+                content=None,
+                tool_calls=tool_calls_accumulated,
+            ))
 
             for tr in tool_results:
                 formatted = self.format_tool_result(tr)
