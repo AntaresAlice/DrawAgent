@@ -237,8 +237,12 @@ class VerboseLog:
         if error:
             self._write(f"  [MCP ←] {method} ERROR: {error[:300]}")
         elif result:
-            # Truncate image data
-            short = dict(result)
+            # Deep-copy to avoid mutating the caller's result dict.
+            # Shallow copy (dict(result)) shares content list items
+            # with the original; modifying item["data"] there corrupts
+            # the actual base64 data the caller needs to decode.
+            import copy
+            short = copy.deepcopy(result)
             if "content" in short and isinstance(short["content"], list):
                 for item in short["content"]:
                     if isinstance(item, dict) and item.get("type") == "image":
