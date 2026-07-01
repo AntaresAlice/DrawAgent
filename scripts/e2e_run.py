@@ -93,8 +93,10 @@ async def main():
         "- Recommended params: steps=20-40, guidance=5-8, cfg_truncation=0.5-0.7\n"
         "- Prompt style: use 50-150 word detailed visual descriptions\n"
         "- Known weaknesses: complex hands, small faces, text in images\n"
-        "- Always include negative: 'blurry, distorted, low quality, extra limbs, fused fingers'\n"
-        "- For portraits: ensure face fills >15% of image; include 'detailed facial features, sharp eyes'"
+        "- Always include negative_prompt with: '平庸、模糊、扭曲、肥胖、低像素、水印'\n"
+        "  plus context-specific negatives (e.g., 'extra limbs, fused fingers' for portraits)\n"
+        "- For portraits: ensure face fills >15% of image; include 'detailed facial features, sharp eyes'\n"
+        "- Language: write prompts in the same language as the user's request"
     )
     config = AppConfig(**raw)
 

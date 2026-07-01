@@ -42,7 +42,6 @@ class AgentBConfig(BaseModel):
         "cfg_truncation": 0.6,
         "max_sequence_length": 512,
         "seed": -1,
-        "negative_prompt": "平庸、模糊、扭曲、肥胖、低像素、水印",
     })
 
     # Model-specific hints injected into Agent A's system prompt.

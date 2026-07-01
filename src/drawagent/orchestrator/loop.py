@@ -244,10 +244,12 @@ class InnerLoop:
                         LLMMessage(
                             role="user",
                             content=(
-                                f"Generate images for this prompt using the generate_image tool:\n\n"
-                                f"Prompt: {current_prompt}\n\n"
+                                f"=== GENERATION PHASE ===\n"
+                                f"Current prompt:\n{current_prompt}\n\n"
                                 f"Iteration: {iteration}/{self.config.max_iterations}\n\n"
-                                f"Call generate_image with appropriate parameters."
+                                f"Generate images now. If the prompt contains variations "
+                                f"(indicated by /), produce multiple distinct combinations. "
+                                f"Call generate_image as many times as needed."
                             ),
                         ),
                     ],
