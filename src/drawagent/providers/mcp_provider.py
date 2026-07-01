@@ -13,6 +13,7 @@ import httpx
 
 from drawagent.config.schema import AgentBConfig
 from drawagent.core.errors import ImageGenerationError
+from drawagent.core.verbose_log import VerboseLog
 
 logger = logging.getLogger("drawagent.mcp")
 
@@ -190,10 +191,12 @@ class MCPProvider:
                 args[key] = params[key]
 
         if self._process is not None:
+            VerboseLog.get().mcp_request("tools/call", {"name": self.config.mcp_tool_name, "arguments": args})
             result = await self._send_json_rpc_stdio("tools/call", {
                 "name": self.config.mcp_tool_name,
                 "arguments": args,
             })
+            VerboseLog.get().mcp_response("tools/call", result=result)
         elif self._http_client is not None:
             resp = await self._http_client.post(
                 self.config.mcp_url,

@@ -7,6 +7,7 @@ from PIL import Image
 
 from drawagent.core.errors import ProviderError
 from drawagent.core.types import InspectionTaskResult
+from drawagent.core.verbose_log import VerboseLog
 from drawagent.providers.base import VisionProvider
 from drawagent.tools.base import BaseTool, ToolContext, ToolResult
 
@@ -69,12 +70,17 @@ class InspectImageTool(BaseTool):
 
         image_data = path.read_bytes()
 
+        vlog = VerboseLog.get()
+        model = getattr(self.provider, "model", "vision")
+        vlog.vision_request(model, str(path), task_description, context)
+
         try:
             observation = await self.provider.analyze_image(
                 image_data=image_data,
                 question=task_description,
                 context=context,
             )
+            vlog.vision_response(model, observation)
         except ProviderError as exc:
             return ToolResult(
                 tool_call_id=ctx.tool_call_id or "",

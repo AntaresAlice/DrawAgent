@@ -106,10 +106,16 @@ class ContextAssembler:
 ## Prompt Format Guide ({self.agent_b_config.prompt_format})
 - Model: {self.agent_b_config.model}
 - Default size: {self.agent_b_config.default_params.get('width', 1024)}x{self.agent_b_config.default_params.get('height', 1024)}
-- Default steps: {self.agent_b_config.default_params.get('steps', 8)}
-- Guidance scale: {self.agent_b_config.default_params.get('guidance', 3.5)}
+- Default steps: {self.agent_b_config.default_params.get('steps', 30)}
+- Guidance scale: {self.agent_b_config.default_params.get('guidance', 7.0)}
 """
         parts.append(guide)
+
+        # Inject model-specific hints if configured
+        hints = self.agent_b_config.model_hints
+        if hints and hints.strip():
+            parts.append(f"\n## Model-Specific Knowledge\n{hints.strip()}")
+
         parts.append(MEMORY_USAGE_GUIDE)
 
         return "\n".join(parts)

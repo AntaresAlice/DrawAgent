@@ -37,12 +37,16 @@ class AgentBConfig(BaseModel):
     default_params: dict = Field(default_factory=lambda: {
         "width": 1024,
         "height": 1024,
-        "steps": 8,
-        "guidance": 3.5,
-        "cfg_truncation": 1.0,
+        "steps": 30,
+        "guidance": 7.0,
+        "cfg_truncation": 0.6,
         "max_sequence_length": 512,
         "seed": -1,
     })
+
+    # Model-specific hints injected into Agent A's system prompt.
+    # Contains recommended params, prompt writing tips, known limitations.
+    model_hints: str = ""
     prompt_format: str = "zimage"
 
 

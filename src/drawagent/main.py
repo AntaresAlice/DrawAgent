@@ -22,6 +22,7 @@ def main():
     serve_p.add_argument("--output-dir", type=str, default="./outputs")
     serve_p.add_argument("--config", type=str, default=None, metavar="PATH",
                          help="Path to config YAML file (highest priority overrides)")
+    serve_p.add_argument("--verbose", action="store_true", help="Enable raw pipeline logging")
 
     # cli (interactive)
     cli_p = sub.add_parser("cli", help="Run interactive CLI mode")
@@ -38,6 +39,7 @@ def main():
                        help="Enable step-by-step mode (pause after each iteration)")
     cli_p.add_argument("--db", type=str, default=None,
                        help="Enable session persistence to SQLite DB path")
+    cli_p.add_argument("--verbose", action="store_true", help="Enable raw pipeline logging")
 
     # run (non-interactive, debug-first one-shot)
     run_p = sub.add_parser("run", help="Non-interactive one-shot generation (debug mode)")
@@ -87,6 +89,7 @@ def main():
     run_p.add_argument("--agent-b-url", type=str, default=None)
     run_p.add_argument("--agent-b-endpoint", type=str, default=None)
     run_p.add_argument("--mcp-command", type=str, default=None)
+    run_p.add_argument("--verbose", action="store_true", help="Enable raw pipeline logging")
 
     args = parser.parse_args()
 
@@ -201,6 +204,9 @@ async def run_cli(args):
     from drawagent.persistence.database import Database
 
     config = await ConfigLoader.load(Path.cwd(), config_file=args.config)
+    if getattr(args, "verbose", False):
+        from drawagent.core.verbose_log import VerboseLog
+        VerboseLog.enable()
     print("=" * 60)
     print("  DrawAgent CLI v0.1.0")
     print(f"  Agent A: {config.agent_a.model}")
@@ -465,6 +471,10 @@ async def run_cli_noninteractive(args):
 
     config = await ConfigLoader.load(Path.cwd(), config_file=args.config)
     _apply_run_overrides(args, config)
+
+    if getattr(args, "verbose", False):
+        from drawagent.core.verbose_log import VerboseLog
+        VerboseLog.enable()
 
     db = None
     if args.db or args.resume:

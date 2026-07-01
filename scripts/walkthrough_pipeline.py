@@ -21,6 +21,7 @@ from drawagent.agents.agent_a import AgentA
 from drawagent.config.schema import AppConfig
 from drawagent.context.assembler import ContextAssembler
 from drawagent.core.events import EventBus
+from drawagent.core.verbose_log import VerboseLog
 from drawagent.orchestrator.interrupt import InterruptHandler
 from drawagent.orchestrator.loop import InnerLoop
 from drawagent.orchestrator.session import SessionManager
@@ -75,11 +76,22 @@ async def main():
     ]
     raw["agent_b"]["mcp_keep_alive"] = False
     raw["agent_b"]["default_params"] = {
-        "width": 1024, "height": 1024, "steps": 8, "guidance": 3.5,
-        "cfg_truncation": 1.0, "max_sequence_length": 512, "seed": -1,
+        "width": 1024, "height": 1024, "steps": 30, "guidance": 7.0,
+        "cfg_truncation": 0.6, "max_sequence_length": 512, "seed": -1,
     }
+    raw["agent_b"]["model_hints"] = (
+        "## Z-Image Model Tips\n"
+        "- Recommended params: steps=20-40, guidance=5-8, cfg_truncation=0.5-0.7\n"
+        "- Prompt style: use 50-150 word detailed visual descriptions. "
+        "Describe materials, lighting, atmosphere, composition.\n"
+        "- Known weaknesses: complex hands, small faces, text rendering, extreme aspect ratios\n"
+        "- Strengths: architectural details, landscapes, portraits, mood/lighting\n"
+        "- Always include negative: 'blurry, distorted, low quality, extra limbs, fused fingers, watermark'\n"
+        "- For faces: ensure face fills >15% of image; include 'detailed facial features, sharp eyes'"
+    )
 
     config = AppConfig(**raw)
+    VerboseLog.enable()  # Full transparency in walkthrough
     logging.info(f"Agent A: {config.agent_a.model} @ {config.agent_a.api_base}")
     logging.info(f"Agent B: MCP stdio (keep_alive={config.agent_b.mcp_keep_alive})")
     logging.info(f"Agent C: {config.agent_c.model} @ {config.agent_c.api_base}")

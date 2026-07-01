@@ -60,18 +60,18 @@ class GenerateImageTool(BaseTool):
             },
             "steps": {
                 "type": "integer",
-                "description": "Diffusion steps (quality vs speed)",
-                "default": 8,
+                "description": "Diffusion steps (quality vs speed). Recommended: 20-40",
+                "default": 30,
             },
             "guidance": {
                 "type": "number",
-                "description": "CFG guidance scale",
-                "default": 3.5,
+                "description": "CFG guidance scale. Recommended: 5.0-8.0",
+                "default": 7.0,
             },
             "cfg_truncation": {
                 "type": "number",
-                "description": "CFG truncation ratio (0-1), lower values reduce over-saturation",
-                "default": 1.0,
+                "description": "CFG truncation ratio (0-1), lower values reduce over-saturation. Recommended: 0.5-0.7",
+                "default": 0.6,
             },
             "max_sequence_length": {
                 "type": "integer",
@@ -120,9 +120,9 @@ class GenerateImageTool(BaseTool):
         params.update({
             "width": args.get("width", params.get("width", 1024)),
             "height": args.get("height", params.get("height", 1024)),
-            "steps": args.get("steps", params.get("steps", 8)),
-            "guidance": args.get("guidance", params.get("guidance", 3.5)),
-            "cfg_truncation": args.get("cfg_truncation", params.get("cfg_truncation", 1.0)),
+            "steps": args.get("steps", params.get("steps", 30)),
+            "guidance": args.get("guidance", params.get("guidance", 7.0)),
+            "cfg_truncation": args.get("cfg_truncation", params.get("cfg_truncation", 0.6)),
             "max_sequence_length": args.get("max_sequence_length", params.get("max_sequence_length", 512)),
         })
 

@@ -45,7 +45,9 @@ class TestAppConfig:
         b = AgentBConfig()
         assert b.default_params["width"] == 1024
         assert b.default_params["height"] == 1024
-        assert b.default_params["steps"] == 8
+        assert b.default_params["steps"] == 30
+        assert b.default_params["guidance"] == 7.0
+        assert b.default_params["cfg_truncation"] == 0.6
 
     def test_memory_config(self):
         m = MemoryConfig(base_dir="/tmp/mem")
