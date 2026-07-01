@@ -49,12 +49,7 @@
 ---
 
 ## 用户批评要点
-
-1. "真是一抓就死、一放就松"——walkthrough 要么太简略要么太啰嗦。**标准：先原文后评论**。
-2. "你他妈仔细考虑好问题，全盘考虑我们的项目目标和全局设计"——**不要打补丁，要通盘 audit 后再改**。
-3. "加我写的 negative_prompt 进去有什么用？具体要写什么应该由 LLM 确定"——**参数值是 LLM 的决策，你只提供参考信息**。
-4. "你还记得生成模型解耦合的事情吗？"——**模型特定知识不放代码，放 config**。
-
+不要打补丁，要通盘 audit 后再改
 ---
 
 ## 关键文件职责
@@ -76,3 +71,34 @@
 - `temp/WALKTHROUGH_*.md`：测试记录（先原文后评论）。
 - `temp/runs/`：原始日志文件。
 - 不要往 docs/ 放测试记录。
+
+---
+
+## 新增发现 (2026-07-01 第二次运行)
+
+### 5. 系统prompt没有被注入到loop的LLM调用
+
+**症状:** log中 `Messages (1)` — loop发起的每次Agent A调用只含user消息，无system消息。
+**根因:** loop直接构造 `[LLMMessage(role="user", content=...)]` 传给 `run_turn()`，完全绕过了
+`ContextAssembler._build_system_prompt()` 构建的系统提示词。
+**影响:**
+- 语言匹配规则未生效（中文prompt→英文输出）
+- model_hints（参数推荐、resolution建议）完全没用
+- 所有prompt写作指南未传达给LLM
+**修复方向:** loop应调用 `assembler.assemble_current_turn(session, instruction)` 来构建消息，
+该方法会在user消息前插入system prompt（含BASE_SYSTEM_PROMPT + model_hints + MEMORY_USAGE_GUIDE）。
+
+### 6. inspect_image逐张检查耗时爆炸
+
+**症状:** 8张图×3个检查维度=24次vision调用，超时未完成1次迭代。
+**改进方向:**
+- 不检查全部图片——只检查"best"和"worst"各一张，或最多3张
+- 使用compare_images来批量化质量对比
+- 考虑让inspect_image一次传入多个图片路径
+
+### 7. qwen3.5:9b连续空响应
+
+**症状:** 多张图片的VISION RESPONSE为0 chars，尤其在后期spatial_low_angle和anatomy检查中。
+**可能原因:** Ollama KV cache在多轮图片调用中耗尽（每个图片base64 ~1.7MB，远超上下文容量）。
+**现有缓解:** 384px resize + keep_alive=0（仅用于compare_images），单图inspect仍用原图。
+

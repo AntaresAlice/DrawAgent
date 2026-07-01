@@ -219,7 +219,22 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
         context: str | None = None,
         **kwargs: object,
     ) -> str:
-        b64 = base64.b64encode(image_data).decode()
+        # ── Resize image (CONTEXT WINDOW WORKAROUND) ────
+        # Full-resolution base64 (~1.9M chars for 1024x1024 PNG) exhausts
+        # the vision model's 32K context window, leaving zero token budget
+        # for the response.  Resize to a safe max dimension.
+        from io import BytesIO
+        from PIL import Image
+
+        MAX_DIM = 384
+        img = Image.open(BytesIO(image_data))
+        w, h = img.size
+        if max(w, h) > MAX_DIM:
+            ratio = MAX_DIM / max(w, h)
+            img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+        buf = BytesIO()
+        img.save(buf, "PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode()
 
         content: list[dict] = [{"type": "text", "text": question}]
         if context:
@@ -239,7 +254,12 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
                     "model": self.model,
                     "messages": [{"role": "user", "content": content}],
                     "max_tokens": kwargs.get("max_tokens", 2048),
+                    # Flush KV cache to prevent exhaustion across
+                    # sequential single-image calls (same issue as
+                    # compare_images — see comment there).
+                    "keep_alive": 0,
                 },
+                timeout=httpx.Timeout(180.0),
             )
             resp.raise_for_status()
             observation = resp.json()["choices"][0]["message"]["content"]

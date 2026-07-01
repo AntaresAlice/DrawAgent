@@ -67,12 +67,15 @@ class AgentA:
         messages: list[LLMMessage],
         enabled_tools: set[str] | None = None,
         stream_callback: AsyncIterator[LLMStreamEvent] | None = None,
+        system_prompt: str | None = None,
     ) -> TurnResult:
         """Execute a single Agent A reasoning turn.
 
         Streams LLM response, collects tool calls, executes them via settle.
         Supports up to one round of tool calling per turn (no recursive tool loops).
         """
+        if system_prompt:
+            messages = [LLMMessage(role="system", content=system_prompt)] + messages
         materialization = self.registry.materialize(enabled_tools)
         messages = self._inject_compacted(messages)
 

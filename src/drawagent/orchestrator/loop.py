@@ -80,6 +80,7 @@ class InnerLoop:
 
         self.images_history: list[list[ImageRecord]] = []
         self.observations_history: list[InspectionRecord] = []
+        self._system_prompt = assembler._build_system_prompt(session)
 
     async def run(
         self,
@@ -254,6 +255,7 @@ class InnerLoop:
                         ),
                     ],
                     enabled_tools={"generate_image"},
+                    system_prompt=self._system_prompt,
                 )
             except Exception as gen_exc:
                 await self.events.emit(
@@ -324,6 +326,7 @@ class InnerLoop:
                             ),
                         ],
                         enabled_tools={"inspect_image", "compare_images"},
+                        system_prompt=self._system_prompt,
                     )
 
                     img_observation = ""
