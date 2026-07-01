@@ -117,6 +117,7 @@ async def run_server(args):
     from drawagent.tools.base import ToolRegistry
     from drawagent.tools.generate_image import GenerateImageTool
     from drawagent.tools.inspect_image import InspectImageTool
+    from drawagent.tools.compare_images import CompareImagesTool
     from drawagent.memory.tools import LoadMemoryTool, SearchMemoryTool, SaveMemoryTool
     from drawagent.memory.store import MemoryStore
     from drawagent.memory.index import MemoryIndex
@@ -137,8 +138,10 @@ async def run_server(args):
     registry = ToolRegistry()
     gen_tool = GenerateImageTool(config=config.agent_b, output_dir=args.output_dir)
     inspect_tool = InspectImageTool(vision_provider=None)
+    compare_tool = CompareImagesTool(vision_provider=None)
     registry.register(gen_tool)
     registry.register(inspect_tool)
+    registry.register(compare_tool)
 
     memory_dir = Path(config.memory.base_dir).expanduser()
     store = MemoryStore(memory_dir)
@@ -200,6 +203,7 @@ async def run_cli(args):
     from drawagent.tools.base import ToolRegistry
     from drawagent.tools.generate_image import GenerateImageTool
     from drawagent.tools.inspect_image import InspectImageTool
+    from drawagent.tools.compare_images import CompareImagesTool
     from drawagent.tools.human_input import AskUserTool
     from drawagent.persistence.database import Database
 
@@ -302,9 +306,11 @@ async def run_cli(args):
     registry = ToolRegistry()
     gen_tool = GenerateImageTool(config=config.agent_b, output_dir=args.output_dir)
     inspect_tool = InspectImageTool(vision_provider=provider_c)
+    compare_tool = CompareImagesTool(vision_provider=provider_c)
     ask_tool = AskUserTool()
     registry.register(gen_tool)
     registry.register(inspect_tool)
+    registry.register(compare_tool)
     registry.register(ask_tool)
 
     from drawagent.memory.tools import LoadMemoryTool, SearchMemoryTool, SaveMemoryTool
@@ -467,6 +473,7 @@ async def run_cli_noninteractive(args):
     from drawagent.tools.base import ToolRegistry
     from drawagent.tools.generate_image import GenerateImageTool
     from drawagent.tools.inspect_image import InspectImageTool
+    from drawagent.tools.compare_images import CompareImagesTool
     from drawagent.persistence.database import Database
 
     config = await ConfigLoader.load(Path.cwd(), config_file=args.config)
@@ -524,8 +531,10 @@ async def run_cli_noninteractive(args):
     registry = ToolRegistry()
     gen_tool = GenerateImageTool(config=config.agent_b, output_dir=args.output_dir)
     inspect_tool = InspectImageTool(vision_provider=provider_c)
+    compare_tool = CompareImagesTool(vision_provider=provider_c)
     registry.register(gen_tool)
     registry.register(inspect_tool)
+    registry.register(compare_tool)
 
     # ── Session resolution ──
     original_session_id = None

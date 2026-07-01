@@ -29,6 +29,7 @@ from drawagent.providers.factory import ProviderFactory
 from drawagent.tools.base import ToolRegistry
 from drawagent.tools.generate_image import GenerateImageTool
 from drawagent.tools.inspect_image import InspectImageTool
+from drawagent.tools.compare_images import CompareImagesTool
 
 # ── Sett logging to DEBUG for maximum detail ───────────────────────────────
 LOG_LINES = []
@@ -109,11 +110,13 @@ async def main():
 
     gen_tool = GenerateImageTool(config.agent_b, output_dir=str(outdir))
     inspect_tool = InspectImageTool(vision_provider=provider_c)
+    compare_tool = CompareImagesTool(vision_provider=provider_c)
 
     registry = ToolRegistry()
     registry.register(gen_tool)
     registry.register(inspect_tool)
-    logging.info(f"Tools: generate_image, inspect_image")
+    registry.register(compare_tool)
+    logging.info(f"Tools: generate_image, inspect_image, compare_images")
 
     # ── Session ────────────────────────────────────────────────────────────
     session_mgr = SessionManager()

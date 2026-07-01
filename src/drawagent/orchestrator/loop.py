@@ -321,7 +321,7 @@ class InnerLoop:
                                 ),
                             ),
                         ],
-                        enabled_tools={"inspect_image"},
+                        enabled_tools={"inspect_image", "compare_images"},
                     )
 
                     img_observation = ""

@@ -248,6 +248,93 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
         except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
             raise self._handle_error(e, f"{self.model}") from e
 
+    async def compare_images(
+        self,
+        image_data_1: bytes,
+        image_data_2: bytes,
+        questions: str,
+        context: str | None = None,
+        **kwargs: object,
+    ) -> str:
+        """Compare two images in a single vision API call.
+
+        Images are resized to conserve context window budget — this is a
+        temporary workaround for vision models with limited context caps.
+
+        TODO: Replace with native multi-image support once a model with
+        larger vision context is available (or once the vision model
+        properly scales image tokens).
+        """
+        from io import BytesIO
+        from PIL import Image
+
+        # ── Resize both images (TEMPORARY CONTEXT WINDOW WORKAROUND) ────
+        # Larger images = more visual tokens = less room for output.
+        # 384px on the longer side keeps both images + response within ~28K
+        # of the 32K context window for qwen3.5:9b.
+        # TODO: Remove when switching to a vision model with larger context
+        # or when the API properly scales image tokens.
+        MAX_DIM = 384
+
+        def encode_resized(data: bytes) -> tuple[str, tuple[int, int]]:
+            img = Image.open(BytesIO(data))
+            w, h = img.size
+            if max(w, h) > MAX_DIM:
+                ratio = MAX_DIM / max(w, h)
+                new_size = (int(w * ratio), int(h * ratio))
+                img = img.resize(new_size, Image.LANCZOS)
+            buf = BytesIO()
+            img.save(buf, "PNG")
+            return base64.b64encode(buf.getvalue()).decode(), img.size
+
+        b64_1, size_1 = encode_resized(image_data_1)
+        b64_2, size_2 = encode_resized(image_data_2)
+
+        content: list[dict] = [
+            {
+                "type": "text", "text": (
+                    f"You will see two images in order: Image 1 first, then Image 2.\n\n"
+                    f"{questions}\n\n"
+                    f"Always refer to them as 'Image 1' and 'Image 2'. "
+                    f"Be specific and detailed in your comparison."
+                ),
+            },
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_1}"}},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_2}"}},
+        ]
+        if context:
+            content.insert(0, {"type": "text", "text": context})
+
+        vlog = VerboseLog.get()
+        if vlog.enabled:
+            vlog._write(
+                f"  [VISION COMPARE → {self.model}] "
+                f"{size_1} + {size_2}, Q: {questions[:100]}"
+            )
+
+        client = await self._ensure_client()
+        try:
+            resp = await client.post(
+                f"{self.api_base}/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": content}],
+                    "max_tokens": kwargs.get("max_tokens", 1024),
+                    "temperature": kwargs.get("temperature", 0.3),
+                    # Force fresh context — prevents KV cache exhaustion from
+                    # previous multi-image calls with the same Ollama session.
+                    "keep_alive": 0,
+                },
+                timeout=httpx.Timeout(180.0),
+            )
+            resp.raise_for_status()
+            observation = resp.json()["choices"][0]["message"]["content"]
+            vlog.vision_response(self.model, observation)
+            return observation
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+            raise self._handle_error(e, f"{self.model}") from e
+
     def _format_message(self, msg: LLMMessage) -> dict:
         formatted: dict = {"role": msg.role, "content": msg.content}
         if msg.tool_call_id is not None:

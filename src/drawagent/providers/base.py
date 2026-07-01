@@ -69,3 +69,22 @@ class VisionProvider(ABC):
         **kwargs: object,
     ) -> str:
         ...
+
+    @abstractmethod
+    async def compare_images(
+        self,
+        image_data_1: bytes,
+        image_data_2: bytes,
+        questions: str,
+        context: str | None = None,
+        **kwargs: object,
+    ) -> str:
+        """Compare two images using the vision model.
+
+        Sends both images in a single API call with comparison questions.
+        The model identifies images by their order (first = Image 1, second = Image 2).
+
+        NOTE: Images are resized internally to fit context window limits.
+        This is a temporary workaround for small-context vision models.
+        """
+        ...
