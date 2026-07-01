@@ -32,84 +32,50 @@ class GenerateImageTool(BaseTool):
         "properties": {
             "prompt": {
                 "type": "string",
-                "description": (
-                    "The image generation prompt. Write a detailed visual description of what "
-                    "you want to see. Include: subject, pose, clothing, setting, lighting, "
-                    "camera angle, style keywords. Use the same language as the user's request. "
-                    "50-150 words recommended for best results."
-                ),
+                "description": "The image generation prompt — detailed visual description of what to generate.",
             },
             "negative_prompt": {
                 "type": "string",
-                "description": (
-                    "What to avoid in the image. Compose context-specific negatives added to "
-                    "a base of common defects. Recommended base: '平庸、模糊、扭曲、肥胖、低像素、水印'. "
-                    "Add: 'extra limbs, fused fingers, distorted hands' for portraits; "
-                    "'text, watermark, signature' for clean images; "
-                    "'blurry background, shallow depth' for detailed scenes."
-                ),
+                "description": "What to avoid in the image. Compose based on the specific scene: add body part defects for portraits, text/watermark for clean images, etc.",
             },
             "num_images": {
                 "type": "integer",
-                "description": "Number of images per call (1-4). Use 1-2 for iteration, 3-4 for initial exploration.",
+                "description": "Number of images to generate per call (1-4).",
                 "default": 2,
             },
             "seed": {
                 "type": "integer",
-                "description": "Random seed for reproducibility (-1 = random). Use fixed seeds for A/B testing.",
+                "description": "Random seed (-1 = random). Use fixed seeds for A/B testing.",
                 "default": -1,
             },
             "width": {
                 "type": "integer",
-                "description": (
-                    "Image width in pixels (512-2048). Choose based on composition: "
-                    "square (1024x1024) for centered subjects; "
-                    "portrait (768x1344 or 960x1280) for full-body or vertical scenes; "
-                    "landscape (1344x768) for wide scenes. Recommended: 960-1024."
-                ),
+                "description": "Image width in pixels. Choose based on composition orientation.",
                 "default": 1024,
             },
             "height": {
                 "type": "integer",
-                "description": (
-                    "Image height in pixels (512-2048). Match width for aspect ratio. "
-                    "Recommended: 1024 for square, 1280-1344 for portrait orientation."
-                ),
+                "description": "Image height in pixels. Match width for desired aspect ratio.",
                 "default": 1024,
             },
             "steps": {
                 "type": "integer",
-                "description": (
-                    "Diffusion inference steps (1-50). More steps = better quality, slower. "
-                    "Recommended: 20-40 for quality output, 8-15 for quick previews."
-                ),
+                "description": "Diffusion inference steps. More steps = better quality, slower generation.",
                 "default": 30,
             },
             "guidance": {
                 "type": "number",
-                "description": (
-                    "CFG guidance scale (0.0-20.0). Higher = stronger prompt adherence, "
-                    "lower = more creative freedom. Recommended: 5.0-8.0. "
-                    "0.0 disables CFG entirely (faster, less controlled)."
-                ),
+                "description": "CFG guidance scale. Higher = stronger prompt adherence, lower = more creative.",
                 "default": 7.0,
             },
             "cfg_truncation": {
                 "type": "number",
-                "description": (
-                    "CFG truncation (0.0-1.0). Controls when guidance stops during sampling. "
-                    "1.0 = full CFG throughout (can over-saturate). "
-                    "Recommended: 0.5-0.7 (CFG only in early steps, natural finish)."
-                ),
+                "description": "CFG truncation ratio (0.0-1.0). Controls when guidance stops during sampling.",
                 "default": 0.6,
             },
             "max_sequence_length": {
                 "type": "integer",
-                "description": (
-                    "Tokenizer max sequence length (128-1024). Controls how much of your "
-                    "prompt the model can process. Higher = better understanding of complex "
-                    "prompts. Recommended: 512 for most cases."
-                ),
+                "description": "Maximum tokenizer sequence length. Higher = better understanding of complex prompts.",
                 "default": 512,
             },
         },

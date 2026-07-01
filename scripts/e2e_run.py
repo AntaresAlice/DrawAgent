@@ -90,13 +90,16 @@ async def main():
     }
     raw["agent_b"]["model_hints"] = (
         "## Z-Image Model Tips\n"
-        "- Recommended params: steps=20-40, guidance=5-8, cfg_truncation=0.5-0.7\n"
-        "- Prompt style: use 50-150 word detailed visual descriptions\n"
-        "- Known weaknesses: complex hands, small faces, text in images\n"
-        "- Always include negative_prompt with: '平庸、模糊、扭曲、肥胖、低像素、水印'\n"
-        "  plus context-specific negatives (e.g., 'extra limbs, fused fingers' for portraits)\n"
-        "- For portraits: ensure face fills >15% of image; include 'detailed facial features, sharp eyes'\n"
-        "- Language: write prompts in the same language as the user's request"
+        "- Steps: 20-40 for quality, 8-15 for speed\n"
+        "- Guidance: 5.0-8.0 (higher = stricter prompt following)\n"
+        "- CFG truncation: 0.5-0.7 (lower = less over-saturation)\n"
+        "- Resolution: portrait 960x1280 for full-body, square 1024x1024 for centered\n"
+        "- Prompt: 50-150 words, same language as user, detailed visual description\n"
+        "- Negative prompt base: '平庸、模糊、扭曲、肥胖、低像素、水印'\n"
+        "  Add context: 'extra limbs, fused fingers' for portraits\n"
+        "- Strengths: architecture, landscapes, portraits, lighting/mood\n"
+        "- Weaknesses: complex hands, small faces, text in images\n"
+        "- num_images: 1-2 for iteration, 3-4 for initial exploration"
     )
     config = AppConfig(**raw)
 
