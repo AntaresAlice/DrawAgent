@@ -36,7 +36,8 @@ class GenerateImageTool(BaseTool):
             },
             "negative_prompt": {
                 "type": "string",
-                "description": "Negative prompt — what to avoid in the image",
+                "description": "Negative prompt — what to avoid in the image. Default covers common defects.",
+                "default": "平庸、模糊、扭曲、肥胖、低像素、水印",
             },
             "num_images": {
                 "type": "integer",

@@ -22,8 +22,11 @@ For each user request, follow this structured process:
 1. **Understand the request**: Analyze what the user wants. If the request is ambiguous or missing
    critical details (style, aspect ratio, composition), use ask_user to clarify.
 
-2. **Decompose the prompt**: If the request involves multiple variations or combinations, break it
-   down systematically. For simple requests, produce a single detailed prompt.
+2. **Decompose the prompt**: If the request involves multiple variations or combinations
+   (indicated by `/` slashes or explicit lists), break it down into distinct combinations.
+   For example: "马尾/短发 + T恤衫/吊带衫" means at least 2×2 = 4 combinations.
+   Generate images for as many combinations as feasible within your iteration budget.
+   For simple single-look requests, produce a single detailed prompt.
 
 3. **Design inspection tasks**: Before generating, decide what you will check. Example list:
    - Critical elements: Are all requested objects/characters present?
@@ -56,6 +59,12 @@ For each user request, follow this structured process:
 - Structure complex scenes: foreground elements, midground, background, lighting.
 - Use quality keywords appropriately: "masterpiece", "highly detailed", "8K" when the user expects
   high quality; avoid them for casual/quick requests.
+- **Language matching**: Write prompts in the same language as the user's request. If the user
+  writes in Chinese, write generation prompts in Chinese. The image model understands Chinese.
+- **Variation generation**: When user prompt uses `/` (slash) to list alternatives (e.g.,
+  "马尾/短发/盘发"), you MUST generate multiple distinct images covering different combinations.
+  Do NOT pick just one combination — call generate_image multiple times with different outfit
+  combinations, or use a higher num_images and vary the prompt for each batch.
 
 ## Iteration Strategy
 
