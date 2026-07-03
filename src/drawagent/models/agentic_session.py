@@ -103,6 +103,21 @@ class AgenticCompaction:
 
 
 @dataclass
+class AgenticIteration:
+    """One outer-loop iteration — groups a set of turns + inspection results.
+
+    Replaces the dict-based iterations list for type safety.
+    """
+
+    number: int = 0
+    turns: list[str] = field(default_factory=list)  # turn IDs
+    images: list[dict] = field(default_factory=list)   # {path, seed, width, height}
+    inspections: list[dict] = field(default_factory=list)  # {path, score, passed, feedback, ...}
+    decision: dict | None = None  # {action, passed, reasoning}
+    summary: str = ""
+
+
+@dataclass
 class AgenticSession:
     """An agentic-mode conversation session.
 
@@ -117,7 +132,7 @@ class AgenticSession:
     compactions: list[AgenticCompaction] = field(default_factory=list)
     learned_lessons: list[str] = field(default_factory=list)
     errors: list[dict] = field(default_factory=list)
-    iterations: list[dict] = field(default_factory=list)
+    iterations: list[AgenticIteration] = field(default_factory=list)
     finalize_rejection_count: int = 0
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
@@ -182,20 +197,18 @@ class InputQueue:
     async def has_pending(self, delivery: Literal["steer", "queue"]) -> bool:
         return await self._db.has_pending_agentic_messages(self._session_id, delivery)
 
-    async def promote_steers(self, cutoff_seq: int | None = None) -> list[AgenticUserMessage]:
-        """Promote all unpromoted steer messages. Returns count only (DB-backed).
+    async def promote_steers(self, cutoff_seq: int | None = None) -> int:
+        """Promote all unpromoted steer messages in DB. Returns count of promoted messages.
 
-        In a full implementation this would return the promoted message objects.
-        For now it delegates to DB and returns count for loop continuation logic.
+        Callers should only check count > 0; actual message content is loaded
+        by ContextBuilder from session.messages (which must be populated separately).
         """
-        count = await self._db.promote_agentic_messages(
+        return await self._db.promote_agentic_messages(
             self._session_id, "steer", cutoff_seq
         )
-        return [] if count == 0 else [AgenticUserMessage(seq=0, text="(promoted)", delivery="steer")]
 
-    async def promote_next_queued(self) -> AgenticUserMessage | None:
-        """Promote exactly one queued message (FIFO)."""
-        count = await self._db.promote_agentic_messages(
+    async def promote_next_queued(self) -> int:
+        """Promote exactly one queued message (FIFO). Returns count (0 or 1)."""
+        return await self._db.promote_agentic_messages(
             self._session_id, "queue", cutoff_seq=None
         )
-        return AgenticUserMessage(seq=0, text="(promoted)", delivery="queue") if count else None

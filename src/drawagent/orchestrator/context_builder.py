@@ -11,13 +11,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from drawagent.models.agentic_session import AgenticSession
 
-# Temporary: limit VLM calls during testing (TODO: remove after testing)
-_VLM_LIMIT_INSTRUCTION = (
-    "IMPORTANT (temporary): To speed up testing, limit inspect_image calls to "
-    "at most 2 images per iteration. Prioritize the most critical inspection "
-    "tasks. This restriction will be lifted in production.\n\n"
-)
-
 
 class ContextBuilder:
     """Builds LLM-ready system prompt and message list for each agentic turn."""
@@ -48,8 +41,14 @@ class ContextBuilder:
         # 5. Compaction checkpoints
         parts.append(self._compaction_summary(session))
 
-        # 6. Temporary: VLM call limit for testing
-        parts.append(_VLM_LIMIT_INSTRUCTION)
+        # 6. VLM inspection throttle (config-driven, 0 = no limit)
+        limit = self._agentic_config.get("max_images_per_inspection", 0)
+        if limit > 0:
+            parts.append(
+                f"IMPORTANT: To control costs, limit inspect_image calls to "
+                f"at most {limit} images per iteration. Prioritize the most "
+                f"critical inspection tasks.\n\n"
+            )
 
         return "\n\n---\n\n".join(p for p in parts if p)
 
@@ -179,9 +178,9 @@ class ContextBuilder:
 
         if session.iterations:
             last = session.iterations[-1]
-            lines.append(f"- Generated images this session: {sum(len(it.get('images', [])) for it in session.iterations)}")
-            if last.get("decision"):
-                d = last["decision"]
+            lines.append(f"- Generated images this session: {sum(len(it.images) for it in session.iterations)}")
+            if last.decision:
+                d = last.decision
                 lines.append(
                     f"- Last quality decision: {'PASSED' if d.get('passed') else 'FAILED'} "
                     f"(confidence {d.get('confidence', '?')}/10)"

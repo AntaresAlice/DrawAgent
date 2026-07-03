@@ -85,6 +85,7 @@ class AgenticLoopConfig(BaseModel):
     max_finalize_rejections: int = 3
     context_window: int = 65536
     output_buffer: int = 8192
+    max_images_per_inspection: int = 0  # 0 = no limit; >0 injects VLM throttle instruction
     compaction: AgenticCompactionConfig = Field(default_factory=AgenticCompactionConfig)
     learning: AgenticLearningConfig = Field(default_factory=AgenticLearningConfig)
 

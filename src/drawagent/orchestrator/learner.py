@@ -45,6 +45,10 @@ class ExperienceLearner:
         learning_cfg = agentic_cfg.get("learning", {})
         self._enabled = learning_cfg.get("enabled", True)
         self._max_lessons = learning_cfg.get("max_lessons", 10)
+        self._event_bus: object | None = None
+
+    def set_event_bus(self, event_bus) -> None:
+        self._event_bus = event_bus
 
     async def reflect(self, session: "AgenticSession") -> None:
         if not self._enabled:
@@ -74,6 +78,12 @@ class ExperienceLearner:
             if new_lessons:
                 logger.info("Session %s learned %d new lessons (total: %d)",
                             session.id, len(new_lessons), len(session.learned_lessons))
+                if self._event_bus:
+                    await self._event_bus.emit("session.learned", {
+                        "session_id": session.id,
+                        "new_lessons": len(new_lessons),
+                        "total_lessons": len(session.learned_lessons),
+                    })
 
         except Exception as exc:
             logger.debug("ExperienceLearner reflect failed: %s", exc)

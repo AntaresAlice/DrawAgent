@@ -55,6 +55,7 @@ class ServerRunner:
         self._provider_c: VisionProvider | None = None
         self._provider_init_attempted = False
         self._active_tasks: dict[str, asyncio.Task] = {}
+        self._agentic_state: dict[str, tuple[AgenticSession, InputQueue]] = {}
 
     async def run_for_message(self, session: Session, text: str) -> None:
         """Launch the inner loop as a background task for a user message."""
@@ -176,24 +177,30 @@ class ServerRunner:
     async def _run_agentic_loop(self, classic_session: Session, text: str) -> None:
         """Agentic mode — LLM-driven generation loop.
 
-        Creates an AgenticSession, sets up the input queue, and runs
-        the full outer+inner LLM-driven loop. The classic Session object
-        is used only to carry the session ID and initial user_request.
+        Creates or reuses an AgenticSession per session_id so that
+        multi-turn conversations preserve context across messages.
+        The classic Session object is used only to carry the session ID.
         """
         session_id = classic_session.id
-        user_request = classic_session.user_request or text
 
-        # Create agentic session
-        agentic_session = AgenticSession(
-            id=session_id,
-            user_request=user_request,
-        )
-
-        # Setup input queue (backed by DB)
-        input_queue = InputQueue(session_id, self.session_manager)
-
-        # Admit initial message as "queue"
-        await input_queue.admit_and_persist(user_request, "queue")
+        # Reuse or create agentic state for this session
+        if session_id in self._agentic_state:
+            agentic_session, input_queue = self._agentic_state[session_id]
+            msg = await input_queue.admit_and_persist(text, "queue")
+            agentic_session.messages.append(msg)
+            logger.info("Session %s agentic: reusing state (turns=%d, messages=%d)",
+                        session_id, len(agentic_session.turns), len(agentic_session.messages))
+        else:
+            agentic_session = AgenticSession(
+                id=session_id,
+                user_request=classic_session.user_request or text,
+            )
+            input_queue = InputQueue(session_id, self.session_manager)
+            msg = await input_queue.admit_and_persist(
+                classic_session.user_request or text, "queue"
+            )
+            agentic_session.messages.append(msg)
+            self._agentic_state[session_id] = (agentic_session, input_queue)
 
         try:
             provider_a, provider_c = await self._get_or_create_providers()
@@ -265,6 +272,30 @@ class ServerRunner:
             task.cancel()
             return True
         return False
+
+    def get_agentic_state(self, session_id: str) -> tuple[AgenticSession, InputQueue] | None:
+        """Return agentic session + input queue if this session uses agentic mode."""
+        return self._agentic_state.get(session_id)
+
+    async def handle_agentic_steer(self, session_id: str, text: str) -> None:
+        """Route a user steer message to the agentic input queue.
+
+        Called by WebSocket handler when a user sends feedback during
+        an active agentic session.
+        """
+        state = self._agentic_state.get(session_id)
+        if state is None:
+            logger.warning("Agentic steer for unknown session %s", session_id)
+            return
+        _agentic_session, input_queue = state
+        msg = await input_queue.admit_and_persist(text, "steer")
+        _agentic_session.messages.append(msg)
+        await self.event_bus.emit("interrupt.accepted", **{
+            "session_id": session_id,
+            "message": text,
+            "delivery": "steer",
+        })
+        logger.info("Agentic steer admitted for session %s: %s", session_id, text[:80])
 
     def update_config(self, config_dict: dict) -> None:
         """Update runtime config from a dict (e.g., from frontend system settings).

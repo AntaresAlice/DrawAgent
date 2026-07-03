@@ -341,11 +341,8 @@ class AgentA:
 
         vlog.log("agent_a", f"run_agentic_turn: {len(llm_messages)} msgs, tools={len(tools)}")
 
-        # Materialize tools
-        if tools:
-            materialization = self.registry.materialize_all()
-        else:
-            materialization = self.registry.materialize_all()
+        # Materialize tools (all available — LLM chooses which to call)
+        materialization = self.registry.materialize_all()
 
         # Accumulators
         accumulated: dict[str, dict] = {}
@@ -414,12 +411,8 @@ class AgentA:
                 # Check for finalize
                 if result.name == "finalize" and result.success:
                     finalized_this_turn = True
-                    await event_bus.emit("session.finalized", {
-                        "session_id": self.session.id,
-                        "accepted_images": result.metadata.get("accepted_images", []),
-                        "rejected_images": result.metadata.get("rejected_images", []),
-                        "reason": result.metadata.get("reason", ""),
-                    })
+                    # Note: session.finalized event is emitted by AgenticLoop,
+                    # not here — tool executor should not decide loop semantics.
 
                 await event_bus.emit("tool.completed", {
                     "session_id": self.session.id,

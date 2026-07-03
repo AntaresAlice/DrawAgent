@@ -126,6 +126,8 @@ class AgenticLoop:
             tool_round = 0
             needs_continuation = True
             _force_injected = False  # prevent infinite force-finalize injection
+            self._consecutive_empty = 0  # guardrail: consecutive empty LLM responses
+            self._consecutive_no_image = 0  # guardrail: consecutive turns without image gen
 
             while needs_continuation:
                 # Guardrail: tool round limit (inject once, break on next round if ignored)
@@ -175,6 +177,31 @@ class AgenticLoop:
                     event_bus=self.event_bus,
                     verbose=self.verbose,
                 )
+
+                # 4b. Guardrail: empty responses
+                if not result.text.strip() and not result.tool_results:
+                    self._consecutive_empty += 1
+                    if self.guardrails.check_empty_responses(self._consecutive_empty):
+                        logger.warning("Too many empty responses — breaking inner loop")
+                        self.session.errors.append({
+                            "type": "empty_responses",
+                            "message": f"LLM returned {self._consecutive_empty} empty responses",
+                        })
+                        needs_continuation = False
+                        break
+                else:
+                    self._consecutive_empty = 0
+
+                # 4c. Guardrail: no image generated
+                has_gen = any(tc.tool_name == "generate_image" for tc in result.tool_results)
+                if result.tool_results and not has_gen:
+                    self._consecutive_no_image += 1
+                    if self.guardrails.check_no_image_generated(self._consecutive_no_image):
+                        logger.warning("Too many turns without generate_image — forcing finalize")
+                        self._inject_force_finalize_message()
+                        _force_injected = True
+                elif has_gen:
+                    self._consecutive_no_image = 0
 
                 # 5. Emit turn.ended
                 await self.event_bus.emit("turn.ended", {
@@ -234,6 +261,7 @@ class AgenticLoop:
             if self.learning_enabled and self.session.iterations:
                 from drawagent.orchestrator.learner import ExperienceLearner
                 learner = ExperienceLearner(self.agent_a, {"agentic": self._agentic_cfg})
+                learner.set_event_bus(self.event_bus)
                 await learner.reflect(self.session)
 
             # 10. Check for next queue item
@@ -269,8 +297,10 @@ class AgenticLoop:
     def _verify_finalize(self, result: AgenticTurnResult) -> bool:
         """Verify LLM's finalize declaration against actual inspection results.
 
-        If the last iteration has FAIL inspections but finalize claimed success,
-        reject the finalize.
+        Walks backward through iterations to find the most recent inspection
+        results. Returns True if all recent inspections passed, False if
+        any failed. If no inspections exist at all, accepts the finalize
+        (LLM is trusted, but this is logged).
 
         Returns True if finalize passes verification, False if rejected.
         """
@@ -285,13 +315,14 @@ class AgenticLoop:
         if not self.session.iterations:
             return True  # No inspections to verify against → accept
 
-        last = self.session.iterations[-1]
-        inspections = last.get("inspections", [])
-        fails = [i for i in inspections if not i.get("passed", True)]
-        if fails:
-            return False
+        for last in reversed(self.session.iterations):
+            inspections = last.inspections
+            if not inspections:
+                continue
+            fails = [i for i in inspections if not i.get("passed", True)]
+            return len(fails) == 0
 
-        return True
+        return True  # No inspections found in any iteration → accept
 
     # ------------------------------------------------------------------
     # Message injection helpers
@@ -305,7 +336,7 @@ class AgenticLoop:
         if not self.session.iterations:
             return
         last = self.session.iterations[-1]
-        fails = [i for i in last.get("inspections", []) if not i.get("passed", True)]
+        fails = [i for i in last.inspections if not i.get("passed", True)]
         fail_lines = []
         for f in fails:
             fail_lines.append(

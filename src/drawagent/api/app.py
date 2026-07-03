@@ -47,7 +47,15 @@ def create_app(
                 data = await ws.receive_text()
                 msg = json.loads(data)
                 if msg.get("type") == "interrupt":
-                    from .routes import _interrupt_handler, _session_manager
+                    from .routes import _interrupt_handler, _session_manager, _runner
+                    if _runner is not None:
+                        # Check for agentic mode first
+                        agentic_state = _runner.get_agentic_state(session_id)
+                        if agentic_state is not None and msg.get("action") == "steer":
+                            text = msg.get("data", {}).get("message", "")
+                            if text:
+                                await _runner.handle_agentic_steer(session_id, text)
+                            continue
                     if _interrupt_handler and _session_manager:
                         session = _session_manager.get_or_none(session_id)
                         if session:
