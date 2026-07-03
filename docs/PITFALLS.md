@@ -102,3 +102,10 @@
 **可能原因:** Ollama KV cache在多轮图片调用中耗尽（每个图片base64 ~1.7MB，远超上下文容量）。
 **现有缓解:** 384px resize + keep_alive=0（仅用于compare_images），单图inspect仍用原图。
 
+### 8. MCP 模型冷启动消耗巨大
+
+**症状:** 迭代间 MCP被杀再启动，Z-Image 模型重载 GPU 每次耗时 ~260s。
+3次迭代=2次冷启动=~520s (8.7 min) 白白浪费在模型加载上。
+**证据:** tools/call response time: 冷启动 331s/327s vs 温启动 62-80s。
+**修复方向:** keep_alive 改为迭代间保持，仅在需要释放 GPU 时才释放。
+
