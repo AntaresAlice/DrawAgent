@@ -51,6 +51,7 @@ class IterationSummary(BaseModel):
     number: int
     prompt: str
     images: list[ImageRef] = Field(default_factory=list)
+    inspections: list[dict] = Field(default_factory=list)
     passed: bool = False
     decision_reasoning: str = ""
 

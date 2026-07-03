@@ -141,6 +141,16 @@ async def get_history(session_id: str):
             number=it.number,
             prompt=it.prompt,
             images=images,
+            inspections=[
+                {
+                    "task_name": insp.task_name,
+                    "task_description": insp.task_description,
+                    "passed": insp.passed,
+                    "observation": insp.observation,
+                    "issues": insp.issues,
+                }
+                for insp in it.inspections
+            ],
             passed=it.decision.passed if it.decision else False,
             decision_reasoning=it.decision.reasoning if it.decision else "",
         ))
@@ -172,10 +182,46 @@ async def delete_session(session_id: str):
 
 @router.get("/config")
 async def get_config():
-    """Return the current application configuration (non-sensitive)."""
+    """Return the current runtime configuration (from the runner, which respects --config)."""
+    if _runner is not None and hasattr(_runner, "config"):
+        cfg = _runner.config
+        return {
+            "agent_a": {
+                "provider": cfg.agent_a.provider,
+                "model": cfg.agent_a.model,
+                "api_base": cfg.agent_a.api_base,
+                "temperature": cfg.agent_a.temperature,
+                "max_tokens": cfg.agent_a.max_tokens,
+            },
+            "agent_b": {
+                "provider": cfg.agent_b.provider,
+                "model": cfg.agent_b.model,
+                "type": cfg.agent_b.type,
+                "api_base": cfg.agent_b.api_base,
+                "endpoint": cfg.agent_b.endpoint,
+                "mcp_command": " ".join(cfg.agent_b.mcp_command) if isinstance(cfg.agent_b.mcp_command, list) else (cfg.agent_b.mcp_command or ""),
+                "mcp_url": cfg.agent_b.mcp_url,
+                "mcp_tool_name": cfg.agent_b.mcp_tool_name,
+                "mcp_keep_alive": cfg.agent_b.mcp_keep_alive,
+                "model_hints": cfg.agent_b.model_hints,
+                "prompt_format": cfg.agent_b.prompt_format,
+            },
+            "agent_c": {
+                "provider": cfg.agent_c.provider,
+                "model": cfg.agent_c.model,
+                "api_base": cfg.agent_c.api_base,
+                "temperature": cfg.agent_c.temperature,
+                "max_tokens": cfg.agent_c.max_tokens,
+            },
+            "loop": {
+                "max_iterations": cfg.loop.max_iterations,
+                "auto_accept_threshold": cfg.loop.auto_accept_threshold,
+                "step_mode": cfg.loop.step_mode,
+            },
+        }
+    # Fallback: load from file (without --config awareness)
     try:
         from drawagent.config.loader import ConfigLoader
-        from pathlib import Path
         config = await ConfigLoader.load(Path.cwd())
         return {
             "agent_a": {
@@ -187,6 +233,7 @@ async def get_config():
             "agent_b": {
                 "provider": config.agent_b.provider,
                 "model": config.agent_b.model,
+                "type": config.agent_b.type,
                 "api_base": config.agent_b.api_base,
             },
             "agent_c": {
@@ -211,7 +258,7 @@ async def update_config(req: dict):
     logger.info("Config update requested: %s", {k: {sk: str(sv)[:100] for sk, sv in (v or {}).items()} for k, v in (req or {}).items()})
     if _runner is not None:
         _runner.update_config(req)
-        return {"updated": True, "note": "Config applied. Providers will be recreated on next request."}
+        return {"updated": True, "note": "Config applied and persisted to file. Providers will be recreated on next request."}
     return {"updated": False, "error": "Server runner not initialized"}
 
 

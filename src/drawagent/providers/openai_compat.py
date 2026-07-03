@@ -200,6 +200,9 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
         if tools:
             body["tools"] = tools
 
+        vlog = VerboseLog.get()
+        vlog.llm_request(self.model, self.model, messages, tools, self.api_base)
+
         client = await self._ensure_client()
         try:
             resp = await client.post(
@@ -208,7 +211,11 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
                 json=body,
             )
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]
+            result = resp.json()["choices"][0]["message"]
+            vlog.llm_final(self.model, text=result.get("content", ""),
+                           tool_calls=result.get("tool_calls"),
+                           finish_reason=resp.json()["choices"][0].get("finish_reason", ""))
+            return result
         except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
             raise self._handle_error(e, f"{self.model}") from e
 

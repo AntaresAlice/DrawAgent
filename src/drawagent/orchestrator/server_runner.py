@@ -38,6 +38,7 @@ class ServerRunner:
         interrupt_handler: InterruptHandler,
         event_bus: EventBus,
         output_dir: str = "./outputs",
+        config_file: str | None = None,
     ):
         self.config = config
         self.tool_registry = tool_registry
@@ -46,6 +47,7 @@ class ServerRunner:
         self.event_bus = event_bus
         self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._config_file = Path(config_file) if config_file else None
 
         self._provider_a: LLMProvider | None = None
         self._provider_c: VisionProvider | None = None
@@ -86,7 +88,14 @@ class ServerRunner:
 
     async def _execute_loop(self, session: Session, text: str) -> None:
         session_id = session.id
-        session.user_request = text
+        # Preserve original user request on feedback messages
+        is_feedback = bool(session.iterations and session.user_request)
+        if is_feedback:
+            session.steer_message = text
+            _LOOP_LOG = __import__("logging").getLogger("drawagent.loop")
+            _LOOP_LOG.info("Session %s received feedback: %s", session_id, text[:120])
+        else:
+            session.user_request = text
 
         try:
             provider_a, provider_c = await self._get_or_create_providers()
@@ -126,7 +135,11 @@ class ServerRunner:
         )
 
         try:
-            result = await loop.run(initial_prompt=text)
+            has_previous = bool(session.iterations)
+            start_iter = len(session.iterations) if is_feedback and has_previous else 0
+            if is_feedback and has_previous:
+                text = session.iterations[-1].prompt  # continue from last known prompt
+            result = await loop.run(initial_prompt=text, start_iteration=start_iter)
             logger.info(
                 "Session %s loop finished: reason=%s, iterations=%d, images=%d",
                 session_id,
@@ -189,3 +202,25 @@ class ServerRunner:
             gen_tool._mcp_provider = None
 
         logger.info("Config updated, providers cleared for recreation")
+
+        # Persist to config file so changes survive restart
+        if self._config_file:
+            self._save_config()
+
+    def _save_config(self) -> None:
+        """Persist current runtime config to the config file."""
+        import yaml
+
+        def _model_to_dict(obj):
+            """Convert a Pydantic model to a serializable dict, excluding None/empty."""
+            if hasattr(obj, "model_dump"):
+                return obj.model_dump(exclude_none=True, exclude={"api_key"})
+            return obj
+
+        config_dict = _model_to_dict(self.config)
+        try:
+            with open(self._config_file, "w", encoding="utf-8") as f:
+                yaml.safe_dump(config_dict, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            logger.info("Config persisted to %s", self._config_file)
+        except Exception as e:
+            logger.warning("Failed to persist config to %s: %s", self._config_file, e)

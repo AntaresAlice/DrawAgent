@@ -74,10 +74,15 @@ class AgentA:
         Streams LLM response, collects tool calls, executes them via settle.
         Supports up to one round of tool calling per turn (no recursive tool loops).
         """
+        from drawagent.core.verbose_log import VerboseLog
+        vlog = VerboseLog.get()
+
         if system_prompt:
             messages = [LLMMessage(role="system", content=system_prompt)] + messages
         materialization = self.registry.materialize(enabled_tools)
         messages = self._inject_compacted(messages)
+
+        vlog.log("agent_a", f"run_turn: {len(messages)} msg, enabled_tools={enabled_tools}, provider={self.provider.__class__.__name__}")
 
         tool_calls_accumulated: list[dict] = []
         accumulated: dict[str, dict] = {}
@@ -144,13 +149,34 @@ class AgentA:
                     name=tr.name,
                 ))
 
+        # Loop continuation until LLM stops making tool calls (handles multi-round
+        # patterns like load_memory → generate_image in a single turn)
+        MAX_TOOL_ROUNDS = 4
+        for _ in range(MAX_TOOL_ROUNDS):
             continuation = await self.provider.chat(
                 messages=messages,
                 tools=materialization.definitions,
             )
             content = continuation.get("content", "")
-            if content:
-                text += "\n" + (str(content) if not isinstance(content, str) else content)
+            cont_tool_calls = continuation.get("tool_calls") or []
+            finish_reason = continuation.get("finish_reason") or finish_reason
+
+            if cont_tool_calls:
+                vlog.log("agent_a", f"continuation tool_calls={len(cont_tool_calls)}: {[tc.get('function',{}).get('name','?') for tc in cont_tool_calls]}")
+                cont_results = await materialization.settle(cont_tool_calls, ToolContext(session_id=self.session.id, agent="A"))
+                tool_results.extend(cont_results)
+                for tr in cont_results:
+                    if tr.error:
+                        print(f"  [AgentA] Continuation tool ERROR: {tr.error[:200]}", flush=True)
+
+                messages.append(LLMMessage(role="assistant", content=None, tool_calls=cont_tool_calls))
+                for tr in cont_results:
+                    formatted = self.format_tool_result(tr)
+                    messages.append(LLMMessage(role="tool", content=formatted, tool_call_id=tr.tool_call_id, name=tr.name))
+            else:
+                if content:
+                    text += "\n" + (str(content) if not isinstance(content, str) else content)
+                break
 
         return TurnResult(
             text=text,

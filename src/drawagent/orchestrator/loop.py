@@ -10,6 +10,7 @@ from drawagent.context.assembler import ContextAssembler
 from drawagent.context.compaction import CompactedHistory
 from drawagent.core.errors import SessionError
 from drawagent.core.events import EventBus, DrawEvent
+from drawagent.core.verbose_log import VerboseLog
 from drawagent.core.types import (
     ImageRecord,
     InspectionRecord,
@@ -172,6 +173,7 @@ class InnerLoop:
 
             # ── Phase 0: CLARIFICATION (iteration 1 only) ──
             if iteration == 1 and not self.session.iterations:
+                VerboseLog.get().log("loop", f"Phase 0 CLARIFICATION iteration={iteration}")
                 clarification = await self.agent_a.clarify_request(
                     current_prompt=current_prompt,
                 )
@@ -196,6 +198,7 @@ class InnerLoop:
 
             # ── Phase 1: PLANNING ──
             self.session_mgr.transition(self.session, SessionState.PLANNING)
+            VerboseLog.get().log("loop", f"Phase 1 PLANNING iteration={iteration}")
             previous_issues = None
             if self.observations_history:
                 last_decision = self.observations_history[-1].decision
@@ -214,6 +217,7 @@ class InnerLoop:
 
             # ── Phase 2: PROMPT REFINEMENT (iteration 2+) ──
             if iteration > 1 and self.observations_history:
+                VerboseLog.get().log("loop", f"Phase 2 REFINE iteration={iteration}")
                 issues_for_refinement = []
                 for obs in self.observations_history[-1].tasks:
                     if not obs.passed:
@@ -222,6 +226,17 @@ class InnerLoop:
                             "observation": obs.observation,
                             "issues": obs.issues,
                         })
+
+                # Inject user feedback as a refinement trigger
+                steer = self.session.steer_message
+                if steer:
+                    issues_for_refinement.append({
+                        "task": "user_feedback",
+                        "observation": f"User provided feedback: {steer}",
+                        "issues": [steer],
+                    })
+                    self.session.steer_message = None  # consumed
+
                 if issues_for_refinement:
                     refined = await self.agent_a.refine_prompt(
                         current_prompt, issues_for_refinement
@@ -236,8 +251,9 @@ class InnerLoop:
 
             # ── Phase 3: GENERATING ──
             self.session_mgr.transition(self.session, SessionState.GENERATING)
+            VerboseLog.get().log("loop", f"Phase 3 GENERATING prompt=\"{current_prompt[:100]}...\" iteration={iteration}")
             print(f"  [Loop] Phase 3 GENERATING: prompt=\"{current_prompt[:80]}...\"", flush=True)
-            await self.events.emit(DrawEvent.GENERATION_STARTED)
+            await self.events.emit(DrawEvent.GENERATION_STARTED, iteration=iteration, prompt=current_prompt[:200])
 
             try:
                 gen_turn = await self.agent_a.run_turn(
@@ -254,7 +270,7 @@ class InnerLoop:
                             ),
                         ),
                     ],
-                    enabled_tools={"generate_image"},
+                    enabled_tools={"generate_image", "load_memory", "search_memory"},
                     system_prompt=self._system_prompt,
                 )
             except Exception as gen_exc:
@@ -279,7 +295,19 @@ class InnerLoop:
                         print(f"  [Loop] Tool error: {tr.error[:200]}")
                         _LOOP_LOG.warning("  Tool error: %s", tr.error[:300])
             self.images_history.append(images)
-            await self.events.emit(DrawEvent.IMAGES_READY, images=images)
+            serializable_images = [
+                {
+                    "filename": img.filename,
+                    "path": img.path,
+                    "iteration": img.iteration,
+                    "seed": img.seed,
+                    "width": img.width,
+                    "height": img.height,
+                    "prompt": img.prompt,
+                }
+                for img in images
+            ]
+            await self.events.emit(DrawEvent.IMAGES_READY, images=serializable_images, iteration=iteration)
 
             if not images:
                 if iteration > 1:
@@ -294,6 +322,7 @@ class InnerLoop:
 
             # ── Phase 4: INSPECTING ──
             self.session_mgr.transition(self.session, SessionState.INSPECTING)
+            VerboseLog.get().log("loop", f"Phase 4 INSPECTING tasks={len(inspection_tasks)} images={len(images)}")
 
             inspection_results: list[InspectionTaskResult] = []
             for task in inspection_tasks:
@@ -325,7 +354,7 @@ class InnerLoop:
                                 ),
                             ),
                         ],
-                        enabled_tools={"inspect_image", "compare_images"},
+                        enabled_tools={"inspect_image", "compare_images", "load_memory", "search_memory"},
                         system_prompt=self._system_prompt,
                     )
 
@@ -369,16 +398,32 @@ class InnerLoop:
                 await self.events.emit(
                     DrawEvent.INSPECTION_TASK_DONE,
                     task=task.get("name"),
-                    result=result,
+                    result={
+                        "task_name": result.task_name,
+                        "task_description": result.task_description,
+                        "passed": result.passed,
+                        "observation": result.observation,
+                        "issues": result.issues,
+                    },
                 )
 
             await self.events.emit(
                 DrawEvent.INSPECTION_COMPLETE,
-                results=inspection_results,
+                results=[
+                    {
+                        "task_name": r.task_name,
+                        "task_description": r.task_description,
+                        "passed": r.passed,
+                        "observation": r.observation,
+                        "issues": r.issues,
+                    }
+                    for r in inspection_results
+                ],
             )
 
             # ── Phase 5: EVALUATING ──
             self.session_mgr.transition(self.session, SessionState.ANALYZING)
+            VerboseLog.get().log("loop", f"Phase 5 EVALUATING iteration={iteration}")
 
             decision = await self.agent_a.evaluate_quality(
                 current_prompt=current_prompt,
@@ -387,7 +432,13 @@ class InnerLoop:
             )
             await self.events.emit(
                 DrawEvent.QUALITY_DECISION,
-                decision=decision,
+                decision={
+                    "passed": decision.passed,
+                    "confidence": decision.confidence,
+                    "reasoning": decision.reasoning,
+                    "remaining_issues": decision.remaining_issues,
+                    "recommendation": decision.recommendation,
+                },
             )
 
             # Save this iteration

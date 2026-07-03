@@ -132,6 +132,13 @@ class VerboseLog:
             lines.append(f"    [{i}] {role}{tc_str}: {content_str}")
         return "\n".join(lines)
 
+    # ── Generic ────────────────────────────────────────────────────────────────
+
+    def log(self, tag: str, text: str) -> None:
+        if not self._enabled:
+            return
+        self._write(f"[{tag}] {text}")
+
     # ── LLM Request / Response ────────────────────────────────────────────────
 
     def llm_request(

@@ -106,6 +106,11 @@ def main():
 async def run_server(args):
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
+    from drawagent.core.verbose_log import VerboseLog
+    if getattr(args, "verbose", False):
+        VerboseLog.enable()
+        print("[VerboseLog] enabled for serve mode", flush=True)
+
     from drawagent.config.loader import ConfigLoader
     from drawagent.core.events import EventBus, DrawEvent
     from drawagent.orchestrator.interrupt import InterruptHandler
@@ -157,6 +162,7 @@ async def run_server(args):
         interrupt_handler=interrupt_handler,
         event_bus=event_bus,
         output_dir=args.output_dir,
+        config_file=args.config,
     )
 
     app = create_app(output_dir=args.output_dir)
@@ -169,8 +175,9 @@ async def run_server(args):
             await ws_manager.broadcast(session_id, event_type if isinstance(event_type, str) else event_type.value, **data_dict)
 
     for evt in [
-        "iteration.started", "prompt.refined", "generation.started",
-        "images.ready", "inspection.task_done", "inspection.complete",
+        "iteration.started", "inspection.plan_ready", "prompt.refined",
+        "generation.started", "images.ready",
+        "inspection.task_done", "inspection.complete",
         "quality.decision", "loop.terminated", "user.interrupt", "error",
         "agent.question", "user.steer", "user.rollback",
     ]:

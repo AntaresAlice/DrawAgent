@@ -112,6 +112,10 @@ class GenerateImageTool(BaseTool):
             await mcp.connect()
 
     async def execute(self, args: dict, ctx: ToolContext) -> ToolResult:
+        from drawagent.core.verbose_log import VerboseLog
+        vlog = VerboseLog.get()
+        vlog.tool_call("generate_image", {k: v for k, v in args.items() if k != "negative_prompt"})
+
         prompt = args["prompt"]
         num_images = args.get("num_images", 2)
         num_images = max(1, min(num_images, 4))
@@ -166,6 +170,7 @@ class GenerateImageTool(BaseTool):
             self._mcp_provider = None
 
         if success_count == 0:
+            vlog.tool_result("generate_image", success=False, error=f"All {num_images} attempts failed")
             return ToolResult(
                 tool_call_id=ctx.tool_call_id or "",
                 name=self.name,
@@ -183,10 +188,12 @@ class GenerateImageTool(BaseTool):
                     f"{info['width']}x{info['height']})"
                 )
 
+        output_text = "\n".join(output_parts)
+        vlog.tool_result("generate_image", success=True, output=output_text[:300])
         return ToolResult(
             tool_call_id=ctx.tool_call_id or "",
             name=self.name,
-            output="\n".join(output_parts),
+            output=output_text,
             metadata={
                 "images": images_info,
                 "prompt": prompt,
