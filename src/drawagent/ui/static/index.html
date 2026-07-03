@@ -83,10 +83,13 @@
                     <label>张数</label><input type="number" id="qpCount" value="2" min="1" max="4">
                 </div>
                 <div class="param-item">
-                    <label>步数</label><input type="number" id="qpSteps" value="8" min="4" max="20">
+                    <label>步数</label><input type="number" id="qpSteps" value="30" min="8" max="50">
                 </div>
                 <div class="param-item">
-                    <label>引导</label><input type="number" id="qpGuidance" value="3.5" min="1" max="10" step="0.5">
+                    <label>引导</label><input type="number" id="qpGuidance" value="7.0" min="1" max="10" step="0.5">
+                </div>
+                <div class="param-item">
+                    <label>CFG</label><input type="number" id="qpCfgTrunc" value="0.6" min="0" max="1" step="0.1">
                 </div>
                 <div class="param-item">
                     <label>种子</label><input type="number" id="qpSeed" value="-1">
@@ -172,11 +175,15 @@
                     <div class="section-title"><i class="fa-solid fa-gear"></i> 质量</div>
                     <div class="slider-group">
                         <label class="slider-label" for="stepsSlider"><span>步数</span><span id="stepsValue">8</span></label>
-                        <input type="range" class="slider" id="stepsSlider" min="4" max="20" step="1" value="8">
+                        <input type="range" class="slider" id="stepsSlider" min="8" max="50" step="1" value="30">
                     </div>
                     <div class="slider-group">
-                        <label class="slider-label" for="guidanceSlider"><span>引导力</span><span id="guidanceValue">3.5</span></label>
-                        <input type="range" class="slider" id="guidanceSlider" min="1" max="10" step="0.5" value="3.5">
+                        <label class="slider-label" for="guidanceSlider"><span>引导力</span><span id="guidanceValue">7.0</span></label>
+                        <input type="range" class="slider" id="guidanceSlider" min="1" max="10" step="0.5" value="7.0">
+                    </div>
+                    <div class="slider-group">
+                        <label class="slider-label" for="cfgTruncSlider"><span>CFG截断</span><span id="cfgTruncValue">0.6</span></label>
+                        <input type="range" class="slider" id="cfgTruncSlider" min="0" max="1" step="0.05" value="0.6">
                     </div>
                     <div class="slider-group">
                         <label class="slider-label" for="seedInput"><span>种子</span><span id="seedValue">-1 (随机)</span></label>
@@ -259,6 +266,10 @@
                             </select>
                         </div>
                         <div class="slider-group">
+                            <label class="slider-label" for="ssModelB"><span>模型</span></label>
+                            <input type="text" class="text-input" id="ssModelB" value="z-image">
+                        </div>
+                        <div class="slider-group">
                             <label class="slider-label" for="ssApiBaseB"><span>API Base URL</span></label>
                             <input type="text" class="text-input" id="ssApiBaseB" value="http://localhost:8000">
                         </div>
@@ -269,11 +280,19 @@
                         <div class="slider-group" id="mcpFieldsB" style="display:none;">
                             <label class="slider-label" for="ssMcpCommand"><span>MCP 命令</span></label>
                             <input type="text" class="text-input" id="ssMcpCommand" placeholder="python D:\Code\Z-Image-MCP\mcp_server.py">
+                            <label class="slider-label" for="ssMcpToolName" style="margin-top:8px;"><span>MCP 工具名</span></label>
+                            <input type="text" class="text-input" id="ssMcpToolName" value="generate_image">
+                            <label class="slider-label" for="ssMcpUrl" style="margin-top:8px;"><span>MCP URL</span></label>
+                            <input type="text" class="text-input" id="ssMcpUrl" value="http://localhost:8000">
                             <label class="checkbox-label" for="ssMcpKeepAlive" style="margin-top:10px;">
                                 <input type="checkbox" id="ssMcpKeepAlive" checked>
                                 <span class="checkbox-custom"></span>
                                 保持 MCP 连接 (关闭以在生成后释放显存)
                             </label>
+                        </div>
+                        <div class="slider-group">
+                            <label class="slider-label" for="ssModelHints"><span>Model Hints</span></label>
+                            <textarea class="text-input" id="ssModelHints" rows="3" style="resize:vertical;" placeholder="模型推荐参数、提示词技巧、已知弱点..."></textarea>
                         </div>
                     </div>
                     <div class="setting-section">
@@ -359,8 +378,12 @@
             AppState.init();
             I18n.init();
             Renderer.refreshI18n();
+            loadSystemConfig();
+            API.getStatus().then(s => {
+                if (s.status !== 'ok') Renderer.showToast('服务器连接异常', 'error');
+                console.debug('[Status]', s.status, 'version:', s.version, 'sessions:', s.sessions_count);
+            }).catch(() => Renderer.showToast('无法连接服务器', 'error'));
             updateSettingsUI();
-            updateSystemSettingsUI();
             updateQuickParamsUI();
             syncQuickParams();
 
@@ -399,6 +422,7 @@
                 countSlider: document.getElementById('countSlider'),
                 stepsSlider: document.getElementById('stepsSlider'),
                 guidanceSlider: document.getElementById('guidanceSlider'),
+                cfgTruncSlider: document.getElementById('cfgTruncSlider'),
                 maxIterSlider: document.getElementById('maxIterSlider'),
                 seedInput: document.getElementById('seedInput'),
                 ssTemperatureA: document.getElementById('ssTemperatureA'),
@@ -428,7 +452,8 @@
 
             els.settingsBtn.addEventListener('click', () => els.settingsPanel.classList.add('active'));
             els.settingsClose.addEventListener('click', () => els.settingsPanel.classList.remove('active'));
-            els.systemSettingsBtn.addEventListener('click', () => els.systemSettingsOverlay.classList.add('active'));
+            els.settingsPanel.addEventListener('click', (e) => { if (e.target === els.settingsPanel) els.settingsPanel.classList.remove('active'); });
+            els.systemSettingsBtn.addEventListener('click', () => { els.systemSettingsOverlay.classList.add('active'); loadSystemConfig(); });
             els.systemSettingsClose.addEventListener('click', () => els.systemSettingsOverlay.classList.remove('active'));
             els.systemSettingsOverlay.addEventListener('click', (e) => { if (e.target === els.systemSettingsOverlay) els.systemSettingsOverlay.classList.remove('active'); });
             els.newSessionBtn.addEventListener('click', () => AppActions.newSession());
@@ -488,7 +513,7 @@
             els.compareClose.addEventListener('click', () => els.compareOverlay.classList.remove('active'));
             els.compareOverlay.addEventListener('click', (e) => { if (e.target === els.compareOverlay) els.compareOverlay.classList.remove('active'); });
 
-            const sliderPairs = [[els.widthSlider,'widthValue'],[els.heightSlider,'heightValue'],[els.countSlider,'countValue'],[els.stepsSlider,'stepsValue'],[els.guidanceSlider,'guidanceValue'],[els.maxIterSlider,'maxIterValue']];
+            const sliderPairs = [[els.widthSlider,'widthValue'],[els.heightSlider,'heightValue'],[els.countSlider,'countValue'],[els.stepsSlider,'stepsValue'],[els.guidanceSlider,'guidanceValue'],[els.cfgTruncSlider,'cfgTruncValue'],[els.maxIterSlider,'maxIterValue']];
             sliderPairs.forEach(([slider, displayId]) => slider.addEventListener('input', () => document.getElementById(displayId).textContent = slider.value));
             els.seedInput.addEventListener('input', () => {
                 const v = els.seedInput.value;
@@ -503,7 +528,7 @@
             });
 
             // Quick params sync
-            ['qpWidth','qpHeight','qpCount','qpSteps','qpGuidance','qpSeed','qpMaxIter'].forEach(id => {
+            ['qpWidth','qpHeight','qpCount','qpSteps','qpGuidance','qpCfgTrunc','qpSeed','qpMaxIter'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) {
                     el.addEventListener('change', () => {
@@ -514,6 +539,7 @@
                             case 'qpCount': p.numImages = parseInt(el.value); break;
                             case 'qpSteps': p.steps = parseInt(el.value); break;
                             case 'qpGuidance': p.guidance = parseFloat(el.value); break;
+                            case 'qpCfgTrunc': p.cfgTruncation = parseFloat(el.value); break;
                             case 'qpSeed': p.seed = parseInt(el.value) || -1; break;
                             case 'qpMaxIter': AppState.settings.maxIterations = parseInt(el.value); break;
                         }
@@ -560,7 +586,7 @@
                     e.target.style.transform = `scale(${pinchScale})`;
                 }
             });
-            document.getElementById('viewerImage').addEventListener('touchend', () => { e => e.target.style.transform = ''; });
+            document.getElementById('viewerImage').addEventListener('touchend', (e) => { e.target.style.transform = ''; });
 
             // Request notification permission on first interaction
             document.addEventListener('click', () => { AppActions.requestNotificationPermission(); }, { once: true });

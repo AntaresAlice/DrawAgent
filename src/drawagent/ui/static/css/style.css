@@ -310,7 +310,56 @@ body {
 .image-action-btn:hover { background:var(--primary); }
 .image-action-btn.favorited { color:var(--warning); }
 
-/* Inspection Card */
+/* Activity log (LLM + tool execution timeline) */
+.activity-log {
+    display:flex; flex-direction:column; gap:4px;
+    background:var(--bg); border-radius:var(--radius-sm); padding:8px;
+}
+.activity-item {
+    border-radius:4px; overflow:hidden;
+}
+.activity-header {
+    display:flex; align-items:center; gap:8px; padding:6px 10px;
+    cursor:pointer; border-radius:4px; min-height:30px;
+    transition:background 0.15s;
+}
+.activity-header:hover { background:rgba(99,102,241,0.08); }
+.activity-title { font-size:13px; font-weight:500; flex-shrink:0; }
+.activity-subtitle {
+    font-size:12px; color:var(--text-secondary);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    flex:1; min-width:0;
+}
+.activity-chevron {
+    font-size:10px; color:var(--text-secondary); flex-shrink:0;
+    transition:transform 0.15s ease; opacity:0;
+}
+.activity-header:hover .activity-chevron { opacity:1; }
+.activity-item.expanded .activity-chevron { opacity:1; transform:rotate(180deg); }
+.activity-body {
+    display:none; padding:0 10px 8px 10px; font-size:12px;
+    color:var(--text-secondary); border-top:1px solid var(--border);
+    margin-top:4px; padding-top:6px;
+}
+.activity-item.expanded .activity-body { display:block; }
+.activity-body pre {
+    white-space:pre-wrap; word-break:break-word; font-family:monospace;
+    font-size:11px; line-height:1.5; margin:0;
+}
+
+/* Inspection plan */
+.inspection-plan-section {
+    background:var(--bg); padding:10px 14px; border-radius:var(--radius-sm);
+}
+.plan-tasks { display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+.plan-task {
+    font-size:12px; color:var(--text-secondary);
+    display:flex; align-items:center; gap:6px;
+}
+.plan-task i { font-size:5px; color:var(--primary); }
+
+/* Inspection list (persistent, in card) */
+.inspection-list { display:flex; flex-direction:column; gap:6px; }
 .inspection-item {
     background:var(--bg); padding:10px 14px; border-radius:var(--radius-sm);
     display:flex; align-items:flex-start; gap:10px; font-size:13px;
@@ -326,6 +375,15 @@ body {
 }
 .decision-banner.pass { background:rgba(16,185,129,0.1); color:var(--success); border:1px solid rgba(16,185,129,0.3); }
 .decision-banner.fail { background:rgba(239,68,68,0.1); color:var(--error); border:1px solid rgba(239,68,68,0.3); }
+
+/* Inspection progress badge */
+.inspection-progress {
+    display:flex; align-items:center; gap:8px; padding:6px 12px;
+    border-radius:20px; font-size:12px; animation: fadeIn 0.3s;
+    align-self:flex-start; margin-left:48px;
+}
+.inspection-progress.pass { color:var(--success); background:rgba(16,185,129,0.1); }
+.inspection-progress.fail { color:var(--error); background:rgba(239,68,68,0.1); }
 
 /* Input Area */
 .input-area { padding:16px 24px 24px; border-top:1px solid var(--border); flex-shrink:0; }

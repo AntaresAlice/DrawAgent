@@ -3,7 +3,7 @@
  */
 const API = {
     baseUrl() {
-        return AppState.settings.serverUrl;
+        return AppState.settings.serverUrl || window.location.origin;
     },
 
     async request(method, path, body = null) {
@@ -21,9 +21,13 @@ const API = {
         console.debug('[API]', resp.status, method, path);
         if (!resp.ok) {
             const err = await resp.text();
-            throw new Error(`API ${method} ${path}: ${resp.status} — ${err}`);
+            throw new Error(`API ${method} ${path}: ${resp.status} — ${err.slice(0, 300)}`);
         }
-        return resp.json();
+        try {
+            return await resp.json();
+        } catch (e) {
+            throw new Error(`Invalid JSON response from ${method} ${path}: ${await resp.text().then(t => t.slice(0, 200))}`);
+        }
     },
 
     async createSession(userRequest = '') {
@@ -76,6 +80,10 @@ const API = {
         return this.request('PUT', '/api/config', config);
     },
 
+    async getConfig() {
+        return this.request('GET', '/api/config');
+    },
+
     imageUrl(filename) {
         return `${this.baseUrl()}/api/images/${filename}`;
     },
@@ -90,7 +98,7 @@ const WSClient = {
 
     connect(sessionId) {
         this.sessionId = sessionId;
-        const base = AppState.settings.serverUrl.replace(/^http/, 'ws');
+        const base = (AppState.settings.serverUrl || window.location.origin).replace(/^http/, 'ws');
         const url = `${base}/ws/sessions/${sessionId}`;
         this.ws = new WebSocket(url);
 

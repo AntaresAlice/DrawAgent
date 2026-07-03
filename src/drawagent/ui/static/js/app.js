@@ -12,13 +12,14 @@ const AppState = {
     loopStatus: null,
     currentIteration: 0,
     maxIterations: 7,
+    _lastUserPrompt: '',
 
     settings: {
-        serverUrl: 'http://127.0.0.1:8000',
+        serverUrl: '',  // auto-detected from window.location.origin on init
         lang: 'zh-CN',
         generationParams: {
-            width: 1024, height: 1024,
-            numImages: 2, steps: 8, guidance: 3.5, seed: -1,
+            width: 960, height: 1280,
+            numImages: 2, steps: 30, guidance: 7.0, seed: -1, cfgTruncation: 0.6,
         },
         maxIterations: 7,
         autoAccept: false,
@@ -30,8 +31,11 @@ const AppState = {
                 apiKey: '', temperature: 0.7,
             },
             agentB: {
-                type: 'http', apiBase: 'http://localhost:8000',
+                type: 'http', model: 'z-image',
+                apiBase: 'http://localhost:8000',
                 endpoint: '/api/generate', mcpCommand: '',
+                mcpToolName: 'generate_image', mcpUrl: '',
+                mcpKeepAlive: true, modelHints: '',
             },
             agentC: {
                 provider: 'openai', model: 'gpt-4o',
@@ -75,7 +79,7 @@ const AppState = {
         if (apiKeyA) this.settings.systemConfig.agentA.apiKey = apiKeyA;
         if (apiKeyC) this.settings.systemConfig.agentC.apiKey = apiKeyC;
 
-        this.settings.serverUrl = this.settings.serverUrl.replace(/\/+$/, '');
+        this.settings.serverUrl = window.location.origin;
 
         // Restore favorites
         const fav = sessionStorage.getItem('drawagent_favorites');

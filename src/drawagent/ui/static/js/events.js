@@ -7,19 +7,30 @@ const EventRouter = {
 
         switch (event.type) {
             case 'iteration.started':
-                Renderer.setProgress(event.iteration || 1, AppState.maxIterations);
+                AppState.currentIteration = event.iteration || 1;
+                Renderer.setProgress(AppState.currentIteration, AppState.maxIterations);
+                Renderer.addIterationCard(AppState.currentIteration, [], [], null);
+                AppState._phase = 'planning';
+                Renderer.setPhase('planning');
                 break;
 
             case 'inspection.plan_ready':
+                if (event.plan) {
+                    Renderer.addInspectionPlan(event.plan);
+                }
                 break;
 
             case 'prompt.refined':
+                if (event.after) {
+                    Renderer.updateIterationPrompt(AppState.currentIteration, event.after);
+                }
                 Renderer.addSystemMessage(_t('promptRefined'));
                 break;
 
             case 'generation.started':
                 Renderer.setLoading(true);
                 AppState._phase = 'generating';
+                Renderer.setPhase('generating');
                 break;
 
             case 'images.ready':
@@ -36,12 +47,20 @@ const EventRouter = {
                 break;
 
             case 'inspection.task_done':
+                AppState._phase = 'inspecting';
+                Renderer.setPhase('inspecting');
+                if (event.task && event.result) {
+                    Renderer.addInspectionToCard(AppState.currentIteration, event.task, event.result);
+                }
                 break;
 
             case 'inspection.complete':
+                Renderer.addSystemMessage(_t('allInspectionsDone'));
                 break;
 
             case 'quality.decision':
+                AppState._phase = 'evaluating';
+                Renderer.setPhase('evaluating');
                 if (event.decision) {
                     const d = event.decision;
                     Renderer.addIterationDecision(
@@ -55,6 +74,7 @@ const EventRouter = {
 
             case 'loop.terminated':
                 Renderer.setLoading(false);
+                Renderer.setPhase(null);
                 Renderer.addSystemMessage(_t('loopTerminated', { reason: event.reason || '' }));
                 AppState._phase = null;
                 notifyComplete(event.reason);
@@ -79,7 +99,7 @@ const EventRouter = {
             case 'error':
                 Renderer.removeLoading();
                 Renderer.setLoading(false);
-                Renderer.addErrorCard(event.message || _t('errorOccurred'));
+                Renderer.addErrorCard(event.message || _t('errorOccurred'), AppState._lastUserPrompt);
                 break;
 
             default:
@@ -122,6 +142,7 @@ const AppActions = {
         }
 
         Renderer.addMessage('user', text);
+        AppState._lastUserPrompt = text;
         input.value = '';
         input.style.height = 'auto';
 
@@ -233,6 +254,7 @@ const AppActions = {
         p.numImages = parseInt(document.getElementById('countSlider').value);
         p.steps = parseInt(document.getElementById('stepsSlider').value);
         p.guidance = parseFloat(document.getElementById('guidanceSlider').value);
+        p.cfgTruncation = parseFloat(document.getElementById('cfgTruncSlider').value);
         p.seed = parseInt(document.getElementById('seedInput').value) || -1;
         AppState.settings.maxIterations = parseInt(document.getElementById('maxIterSlider').value);
         AppState.settings.autoAccept = document.getElementById('autoAcceptCb').checked;
@@ -245,7 +267,7 @@ const AppActions = {
     },
 
     resetSettings() {
-        AppState.settings.generationParams = { width: 1024, height: 1024, numImages: 2, steps: 8, guidance: 3.5, seed: -1 };
+        AppState.settings.generationParams = { width: 960, height: 1280, numImages: 2, steps: 30, guidance: 7.0, seed: -1, cfgTruncation: 0.6 };
         AppState.settings.maxIterations = 7;
         AppState.settings.autoAccept = false;
         AppState.settings.showIntermediate = true;
@@ -266,10 +288,14 @@ const AppActions = {
         };
         mc.agentB = {
             type: document.getElementById('ssTypeB').value,
+            model: document.getElementById('ssModelB').value,
             apiBase: document.getElementById('ssApiBaseB').value,
             endpoint: document.getElementById('ssEndpointB').value,
             mcpCommand: document.getElementById('ssMcpCommand').value,
+            mcpToolName: document.getElementById('ssMcpToolName').value,
+            mcpUrl: document.getElementById('ssMcpUrl').value,
             mcpKeepAlive: document.getElementById('ssMcpKeepAlive').checked,
+            modelHints: document.getElementById('ssModelHints').value,
         };
         mc.agentC = {
             provider: document.getElementById('ssProviderC').value,
@@ -293,10 +319,15 @@ const AppActions = {
                 },
                 agent_b: {
                     type: mc.agentB.type,
+                    provider: mc.agentB.provider || '',
+                    model: mc.agentB.model,
                     api_base: mc.agentB.apiBase,
                     endpoint: mc.agentB.endpoint,
-                    mcp_command: mc.agentB.mcpCommand ? mc.agentB.mcpCommand.split(/\s+/) : null,
+                    mcp_command: mc.agentB.mcpCommand || null,
+                    mcp_tool_name: mc.agentB.mcpToolName || 'generate_image',
+                    mcp_url: mc.agentB.mcpUrl || '',
                     mcp_keep_alive: Boolean(mc.agentB.mcpKeepAlive),
+                    model_hints: mc.agentB.modelHints || '',
                 },
                 agent_c: {
                     provider: mc.agentC.provider,
@@ -308,25 +339,25 @@ const AppActions = {
             };
             const result = await API.updateConfig(backendConfig);
             if (result.updated) {
-                Renderer.showToast('系统设置已保存并生效', 'success');
+                Renderer.showToast(_t('systemSettingsSaved'), 'success');
             } else {
-                Renderer.showToast('设置已保存 (' + (result.note || '') + ')', 'info');
+                Renderer.showToast(_t('systemSettingsSavedNote') + (result.note || ''), 'info');
             }
         } catch (e) {
             console.warn('Backend config sync failed:', e);
-            Renderer.showToast('设置已保存 (服务同步失败: ' + e.message + ')', 'warning');
+            Renderer.showToast(_t('systemSettingsSyncFailed') + e.message + ')', 'warning');
         }
     },
 
     resetSystemSettings() {
         AppState.settings.systemConfig = {
             agentA: { provider: 'openai', model: 'gpt-4o', apiBase: 'https://api.openai.com/v1', apiKey: '', temperature: 0.7 },
-            agentB: { type: 'http', apiBase: 'http://localhost:8000', endpoint: '/api/generate', mcpCommand: '', mcpKeepAlive: true },
+            agentB: { type: 'http', model: 'z-image', apiBase: 'http://localhost:8000', endpoint: '/api/generate', mcpCommand: '', mcpToolName: 'generate_image', mcpUrl: '', mcpKeepAlive: true, modelHints: '' },
             agentC: { provider: 'openai', model: 'gpt-4o', apiBase: 'https://api.openai.com/v1', apiKey: '', temperature: 0.3 },
         };
         AppState.saveSettings();
         updateSystemSettingsUI();
-        Renderer.showToast('系统设置已重置', 'success');
+        Renderer.showToast(_t('systemSettingsReset'), 'success');
     },
 
     async exportSession() {
@@ -343,7 +374,7 @@ const AppActions = {
             URL.revokeObjectURL(url);
             Renderer.showToast(_t('exportSuccess', { id: AppState.currentSessionId }), 'success');
         } catch (e) {
-            Renderer.showToast('导出失败: ' + e.message, 'error');
+            Renderer.showToast(_t('exportFailed') + ': ' + e.message, 'error');
         }
     },
 
@@ -365,6 +396,7 @@ function updateSettingsUI() {
     set('countSlider', p.numImages); txt('countValue', p.numImages);
     set('stepsSlider', p.steps); txt('stepsValue', p.steps);
     set('guidanceSlider', p.guidance); txt('guidanceValue', p.guidance);
+    set('cfgTruncSlider', p.cfgTruncation); txt('cfgTruncValue', p.cfgTruncation);
     set('maxIterSlider', AppState.settings.maxIterations); txt('maxIterValue', AppState.settings.maxIterations);
     set('seedInput', p.seed);
     txt('seedValue', p.seed === -1 ? '-1 (' + _t('labelRandom') + ')' : p.seed);
@@ -380,10 +412,14 @@ function updateSystemSettingsUI() {
     set('ssApiBaseA', ma.apiBase); set('ssApiKeyA', ma.apiKey);
     set('ssTemperatureA', ma.temperature);
     document.getElementById('ssTempValueA').textContent = ma.temperature;
-    set('ssTypeB', mb.type); set('ssApiBaseB', mb.apiBase);
+    set('ssTypeB', mb.type); set('ssModelB', mb.model || 'z-image');
+    set('ssApiBaseB', mb.apiBase);
     set('ssEndpointB', mb.endpoint); set('ssMcpCommand', mb.mcpCommand);
+    set('ssMcpToolName', mb.mcpToolName || 'generate_image');
+    set('ssMcpUrl', mb.mcpUrl || '');
     const mcpKeepEl = document.getElementById('ssMcpKeepAlive');
     if (mcpKeepEl) mcpKeepEl.checked = mb.mcpKeepAlive !== false;
+    set('ssModelHints', mb.modelHints || '');
     document.getElementById('mcpFieldsB').style.display = mb.type === 'mcp' ? 'block' : 'none';
     set('ssProviderC', mc_.provider); set('ssModelC', mc_.model);
     set('ssApiBaseC', mc_.apiBase); set('ssApiKeyC', mc_.apiKey);
@@ -391,11 +427,55 @@ function updateSystemSettingsUI() {
     const tc = document.getElementById('ssTemperatureC'); if (tc) tc.value = mc_.temperature;
 }
 
+async function loadSystemConfig() {
+    try {
+        const config = await API.getConfig();
+        const mc = AppState.settings.systemConfig;
+        const keepKeys = { agentA: mc.agentA.apiKey, agentC: mc.agentC.apiKey };
+
+        if (config.agent_a) {
+            mc.agentA.provider = config.agent_a.provider || mc.agentA.provider;
+            mc.agentA.model = config.agent_a.model || mc.agentA.model;
+            mc.agentA.apiBase = config.agent_a.api_base || mc.agentA.apiBase;
+            mc.agentA.temperature = config.agent_a.temperature != null ? config.agent_a.temperature : mc.agentA.temperature;
+            mc.agentA.apiKey = keepKeys.agentA || '';  // never overwrite from backend
+        }
+        if (config.agent_b) {
+            mc.agentB.type = config.agent_b.type || mc.agentB.type;
+            mc.agentB.model = config.agent_b.model || mc.agentB.model;
+            mc.agentB.apiBase = config.agent_b.api_base || mc.agentB.apiBase;
+            mc.agentB.endpoint = config.agent_b.endpoint || mc.agentB.endpoint;
+            mc.agentB.mcpCommand = config.agent_b.mcp_command || mc.agentB.mcpCommand || '';
+            mc.agentB.mcpToolName = config.agent_b.mcp_tool_name || mc.agentB.mcpToolName || 'generate_image';
+            mc.agentB.mcpUrl = config.agent_b.mcp_url || mc.agentB.mcpUrl || '';
+            mc.agentB.mcpKeepAlive = config.agent_b.mcp_keep_alive;
+            mc.agentB.modelHints = config.agent_b.model_hints || mc.agentB.modelHints || '';
+        }
+        if (config.agent_c) {
+            mc.agentC.provider = config.agent_c.provider || mc.agentC.provider;
+            mc.agentC.model = config.agent_c.model || mc.agentC.model;
+            mc.agentC.apiBase = config.agent_c.api_base || mc.agentC.apiBase;
+            mc.agentC.temperature = config.agent_c.temperature != null ? config.agent_c.temperature : mc.agentC.temperature;
+            mc.agentC.apiKey = keepKeys.agentC || '';  // never overwrite from backend
+        }
+        if (config.loop) {
+            AppState.settings.maxIterations = config.loop.max_iterations != null ? config.loop.max_iterations : AppState.settings.maxIterations;
+        }
+        AppState.saveSettings();
+        updateSystemSettingsUI();
+        updateQuickParamsUI();
+        console.debug('[Config] Loaded runtime config from backend');
+    } catch (e) {
+        console.warn('[Config] Failed to load config from backend, using localStorage:', e.message);
+    }
+}
+
 function updateQuickParamsUI() {
     const p = AppState.settings.generationParams;
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
     set('qpWidth', p.width); set('qpHeight', p.height); set('qpCount', p.numImages);
     set('qpSteps', p.steps); set('qpGuidance', p.guidance); set('qpSeed', p.seed);
+    set('qpCfgTrunc', p.cfgTruncation);
     set('qpMaxIter', AppState.settings.maxIterations);
 }
 

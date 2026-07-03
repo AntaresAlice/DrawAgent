@@ -59,19 +59,21 @@ const Renderer = {
         this._scrollToBottom();
     },
 
-    addErrorCard(message) {
+    addErrorCard(message, retryPrompt = null) {
         const container = document.getElementById('messagesContainer');
         const welcome = document.getElementById('welcomeScreen');
         if (welcome) welcome.style.display = 'none';
 
+        const retryText = retryPrompt || message;
+        const escapedRetry = retryText.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const escapedMsg = message.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         const card = document.createElement('div');
         card.className = 'message agent error-card';
-        const escapedMsg = message.replace(/'/g, "\\'").replace(/"/g, '&quot;');
         card.innerHTML = `<div class="message-avatar"><i class="fa-solid fa-circle-exclamation" style="color:var(--error);"></i></div>
             <div class="message-content" style="border-color:var(--error);background:rgba(239,68,68,0.05);">
                 <div style="margin-bottom:8px;"><i class="fa-solid fa-triangle-exclamation" style="color:var(--error);"></i> <strong>错误</strong></div>
                 <div style="color:var(--text-secondary);font-size:13px;margin-bottom:10px;">${message}</div>
-                <button class="btn btn-primary retry-btn" onclick="AppActions.retryMessage('${escapedMsg}')" style="font-size:12px;padding:6px 14px;flex:0;">
+                <button class="btn btn-primary retry-btn" onclick="AppActions.retryMessage('${escapedRetry}')" style="font-size:12px;padding:6px 14px;flex:0;">
                     <i class="fa-solid fa-rotate-right"></i> 重试
                 </button>
             </div>`;
@@ -189,12 +191,12 @@ const Renderer = {
                 })();
                 images.forEach((img, i) => {
                     const url = API.imageUrl(img.filename || (img.path && img.path.split('/').pop()) || '');
-                    imagesDiv.innerHTML += `<div class="iteration-image-wrapper">
+                    imagesDiv.insertAdjacentHTML('beforeend', `<div class="iteration-image-wrapper">
                         <img class="iteration-image" src="${url}" alt="${img.filename || 'image'}" onclick="Viewer.open(${JSON.stringify(images.map(im => API.imageUrl(im.filename || (im.path && im.path.split('/').pop()) || '')).filter(Boolean))}, ${i})">
                         <div class="iteration-image-actions">
                             <a class="image-action-btn" href="${url}" download><i class="fa-solid fa-download"></i></a>
                         </div>
-                    </div>`;
+                    </div>`);
                 });
             }
         }
@@ -294,6 +296,108 @@ const Renderer = {
         if (el) el.remove();
     },
 
+    addInspectionProgress(taskName, passed) {
+        this.addInspectionToCard(AppState.currentIteration, taskName, { passed });
+    },
+
+    setPhase(phase) {
+        const status = document.getElementById('chatStatus');
+        if (!status) return;
+        const phaseKey = phase ? 'phase' + phase.charAt(0).toUpperCase() + phase.slice(1) : null;
+        const label = phaseKey ? _t(phaseKey) : '';
+        if (phase) {
+            status.textContent = `${_t('iterationProgress', { current: AppState.currentIteration, max: AppState.maxIterations })} — ${label}`;
+            status.classList.add('loading');
+        } else {
+            status.textContent = _t('ready');
+            status.classList.remove('loading');
+        }
+    },
+
+    addInspectionPlan(plan) {
+        const card = this._getCard(AppState.currentIteration);
+        if (!card) return;
+        let body = card.querySelector('.iteration-body');
+        if (!body) return;
+        let section = body.querySelector('.inspection-plan-section');
+        if (!section) {
+            section = document.createElement('div');
+            section.className = 'inspection-plan-section';
+            body.appendChild(section);
+        }
+        const tasks = plan.map(t => `<div class="plan-task"><i class="fa-solid fa-circle"></i> ${t.name || t.description || ''}</div>`).join('');
+        section.innerHTML = `<div class="iteration-prompt-header"><i class="fa-solid fa-clipboard-check"></i> 检查计划 (${plan.length}项)</div><div class="plan-tasks">${tasks}</div>`;
+    },
+
+    updateIterationPrompt(iteration, prompt) {
+        const card = this._getCard(iteration);
+        if (!card) return;
+        card.setAttribute('data-prompt', prompt);
+        const body = card.querySelector('.iteration-body');
+        if (!body) return;
+        let section = body.querySelector('.iteration-prompt-section');
+        if (!section) {
+            section = document.createElement('div');
+            section.className = 'iteration-prompt-section';
+            body.insertBefore(section, body.firstChild);
+        }
+        section.innerHTML = `<div class="iteration-prompt-header"><i class="fa-solid fa-pen-to-square"></i> ${_t('promptLabel')}</div><div class="iteration-prompt">${this._formatContent(prompt)}</div>`;
+    },
+
+    addInspectionToCard(iteration, taskName, result) {
+        const card = this._getCard(iteration);
+        if (!card) return;
+        const body = card.querySelector('.iteration-body');
+        if (!body) return;
+        let list = body.querySelector('.inspection-list');
+        if (!list) {
+            list = document.createElement('div');
+            list.className = 'inspection-list';
+            body.appendChild(list);
+        }
+        const existing = list.querySelector(`[data-task="${taskName.replace(/"/g, '')}"]`);
+        if (existing) existing.remove();
+        const item = document.createElement('div');
+        item.className = `inspection-item ${result.passed ? 'pass' : 'fail'}`;
+        item.setAttribute('data-task', taskName);
+        item.innerHTML = `<span class="status-icon"><i class="fa-solid ${result.passed ? 'fa-circle-check' : 'fa-circle-xmark'}"></i></span><div><strong>${taskName}</strong><div style="color:var(--text-secondary);margin-top:2px;">${(result.observation || '').slice(0, 200)}</div></div>`;
+        list.appendChild(item);
+    },
+
+    addActivityItem(title, subtitle, detail) {
+        const card = this._getCard(AppState.currentIteration);
+        if (!card) return;
+        const body = card.querySelector('.iteration-body');
+        if (!body) return;
+        let log = body.querySelector('.activity-log');
+        if (!log) {
+            log = document.createElement('div');
+            log.className = 'activity-log';
+            body.insertBefore(log, body.firstChild);
+        }
+        const item = document.createElement('div');
+        item.className = 'activity-item';
+        const header = document.createElement('div');
+        header.className = 'activity-header';
+        header.innerHTML = `<span class="activity-title">${title}</span><span class="activity-subtitle">${subtitle || ''}</span><i class="fa-solid fa-chevron-down activity-chevron"></i>`;
+        header.addEventListener('click', () => {
+            item.classList.toggle('expanded');
+        });
+        item.appendChild(header);
+        if (detail) {
+            const body = document.createElement('div');
+            body.className = 'activity-body';
+            body.innerHTML = `<pre>${this._escHtml(detail)}</pre>`;
+            item.appendChild(body);
+        }
+        log.appendChild(item);
+        this._scrollToBottom();
+    },
+
+    _getCard(iteration) {
+        return document.querySelector(`.iteration-card[data-iteration="${iteration}"]`);
+    },
+
     showToast(text, type = 'info') {
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
@@ -336,7 +440,7 @@ const Renderer = {
                 <span class="session-icon"><i class="fa-solid fa-message"></i></span>
                 <div class="session-info">
                     <div class="session-title">${s.user_request || _t('newSessionTitle')}</div>
-                    <div class="session-date">${s.created_at ? new Date(s.created_at).toLocaleDateString() : ''}</div>
+                    <div class="session-date">${s.created_at ? new Date(s.created_at).toLocaleString() : ''}</div>
                 </div>
                 <button class="session-action-btn" onclick="event.stopPropagation(); AppActions.selectSession('${s.id}'); setTimeout(() => AppActions.exportSession(), 100);" title="${_t('download')}">
                     <i class="fa-solid fa-download"></i>
