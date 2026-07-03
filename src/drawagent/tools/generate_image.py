@@ -179,6 +179,9 @@ class GenerateImageTool(BaseTool):
             )
 
         output_parts = [f"Generated {success_count}/{num_images} images successfully."]
+        # Echo a brief prompt summary so LLM can confirm its prompt was received
+        prompt_summary = str(prompt)[:200]
+        output_parts.append(f"  Prompt: {prompt_summary}{'...' if len(str(prompt)) > 200 else ''}")
         for i, info in enumerate(images_info, 1):
             if "error" in info:
                 output_parts.append(f"  Image {i}: FAILED — {info['error']}")
