@@ -53,6 +53,7 @@ class AgenticLoop:
         self.session_manager = session_manager
         self.verbose = verbose
         agentic_cfg = config.get("agentic", {}) if isinstance(config, dict) else {}
+        self._agentic_cfg = agentic_cfg
         self.guardrails = SessionGuardrails(agentic_cfg)
         self.max_agentic_rounds = agentic_cfg.get("max_agentic_rounds", 20)
         self.max_tool_rounds = agentic_cfg.get("max_tool_rounds", 10)
@@ -151,7 +152,7 @@ class AgenticLoop:
                         system_prompt, messages, materialization.definitions
                     ):
                         from drawagent.orchestrator.compactor import ContextCompactor
-                        compactor = ContextCompactor(self.agent_a, {})
+                        compactor = ContextCompactor(self.agent_a, {"agentic": self._agentic_cfg})
                         if await compactor.compact_if_needed(
                             self.session, system_prompt, messages, materialization.definitions
                         ):
@@ -232,7 +233,7 @@ class AgenticLoop:
             # 9. Reflect (learning) — inserted at outer loop level
             if self.learning_enabled and self.session.iterations:
                 from drawagent.orchestrator.learner import ExperienceLearner
-                learner = ExperienceLearner(self.agent_a, {"agentic": {}})
+                learner = ExperienceLearner(self.agent_a, {"agentic": self._agentic_cfg})
                 await learner.reflect(self.session)
 
             # 10. Check for next queue item
