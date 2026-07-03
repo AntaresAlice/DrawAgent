@@ -64,9 +64,10 @@ from drawagent.tools.inspect_image import InspectImageTool
 from drawagent.tools.compare_images import CompareImagesTool
 
 PROMPT = (
-    "少女，身材非常好，戴眼镜，马尾/短发/盘发，"
+    "中国少女，身材非常好，戴眼镜，马尾/短发/盘发，"
     "T恤衫/吊带衫，牛仔裤/喇叭裤/热裤，"
-    "教室里坐着，看着镜头，从下往上仰视拍摄。"
+    "教室里坐着，看着镜头，从下往上仰视拍摄。水磨石地板，防盗窗，窗外阳光明媚，光影斑驳"
+    "真实摄影"
 )
 
 async def main():
