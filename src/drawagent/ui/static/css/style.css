@@ -655,3 +655,110 @@ body {
     .param-item input { width:48px; font-size:11px; }
     .modal-container { width:95%; max-height:90vh; }
 }
+
+/* ── Agentic Activity Stream ─────────────────────────────────────────── */
+
+.agentic-turn {
+    margin: 12px 0;
+    border-radius: var(--radius-sm);
+    background: var(--bg-light);
+    border: 1px solid var(--border);
+    overflow: hidden;
+}
+.agentic-turn-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: default;
+    color: var(--text-secondary);
+}
+.agentic-turn-header.finalized-header {
+    background: rgba(16, 185, 129, 0.1);
+    border-bottom: 1px solid var(--success);
+}
+.agentic-turn-body {
+    padding: 8px 14px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+.agentic-turn-icon {
+    width: 20px; text-align: center;
+}
+.agentic-text {
+    white-space: pre-wrap;
+    color: var(--text);
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+.agentic-tools {
+    display: flex; flex-direction: column; gap: 6px;
+}
+.agentic-tool-item {
+    border-radius: 6px;
+    background: rgba(99, 102, 241, 0.05);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    overflow: hidden;
+}
+.agentic-tool-trigger {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.agentic-tool-trigger:hover {
+    background: rgba(99, 102, 241, 0.08);
+}
+.agentic-tool-chevron {
+    font-size: 10px;
+    width: 12px; text-align: center;
+}
+.agentic-tool-icon {
+    font-size: 13px;
+}
+.agentic-tool-name {
+    font-weight: 600;
+    color: var(--text);
+    font-family: monospace;
+    font-size: 12px;
+}
+.agentic-tool-summary {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.agentic-tool-detail {
+    padding: 6px 10px;
+    border-top: 1px solid rgba(99, 102, 241, 0.15);
+    background: var(--bg);
+    font-size: 11px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.agentic-tool-detail pre {
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text-secondary);
+    font-family: monospace;
+    font-size: 11px;
+}
+.agentic-finalize-reason {
+    white-space: pre-wrap;
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.5;
+}
+.agentic-image-preview {
+    padding: 4px 0;
+}
+.agentic-image-preview img {
+    border: 1px solid var(--border);
+    transition: transform 0.15s;
+}
+.agentic-image-preview img:hover {
+    transform: scale(1.02);
+}
+

@@ -14,6 +14,8 @@ const AppState = {
     maxIterations: 7,
     _lastUserPrompt: '',
 
+    isAgentic: false,  // engine === 'agentic'
+
     settings: {
         serverUrl: '',  // auto-detected from window.location.origin on init
         lang: 'zh-CN',

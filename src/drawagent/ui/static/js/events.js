@@ -5,6 +5,52 @@ const EventRouter = {
     dispatch(event) {
         console.debug('[Event]', event.type, event);
 
+        // Auto-detect agentic engine from first agentic event
+        if (!AppState.isAgentic && ['turn.started', 'text.delta', 'tool.completed', 'session.finalized'].includes(event.type)) {
+            AppState.isAgentic = true;
+            ActivityStream.init();
+        }
+
+        // Agentic mode events — render via ActivityStream
+        if (AppState.isAgentic) {
+            switch (event.type) {
+                case 'turn.started':
+                    ActivityStream.onTurnStarted(event);
+                    return;
+                case 'turn.ended':
+                    return;
+                case 'text.delta':
+                    ActivityStream.onTextDelta(event);
+                    return;
+                case 'tool.completed':
+                    ActivityStream.onToolCompleted(event);
+                    return;
+                case 'tool.failed':
+                    ActivityStream.onToolCompleted(event);  // same handler
+                    return;
+                case 'session.finalized':
+                    ActivityStream.onFinalized(event);
+                    AppState.loopStatus = null;
+                    Renderer.setLoading(false);
+                    return;
+                case 'session.compacted':
+                    ActivityStream.onCompacted(event);
+                    return;
+                case 'interrupt.accepted':
+                    ActivityStream.onInterruptAccepted(event);
+                    return;
+                case 'loop.terminated':
+                    Renderer.setLoading(false);
+                    AppState.loopStatus = null;
+                    return;
+                case 'error':
+                    Renderer.removeLoading();
+                    Renderer.setLoading(false);
+                    Renderer.addErrorCard(event.message || _t('errorOccurred'), AppState._lastUserPrompt);
+                    return;
+            }
+        }
+
         switch (event.type) {
             case 'iteration.started':
                 AppState.currentIteration = event.iteration || 1;
@@ -145,6 +191,11 @@ const AppActions = {
         AppState._lastUserPrompt = text;
         input.value = '';
         input.style.height = 'auto';
+
+        // Reset agentic stream on new message
+        if (AppState.isAgentic) {
+            ActivityStream.reset();
+        }
 
         WSClient.disconnect();
         WSClient.connect(AppState.currentSessionId);
