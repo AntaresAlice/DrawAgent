@@ -58,9 +58,68 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Agentic mode tables (LLM-driven loop, coexisting with classic 5-phase)
+CREATE TABLE IF NOT EXISTS agentic_turns (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    seq             INTEGER NOT NULL,
+    user_msg_id     TEXT,
+    assistant_text  TEXT,
+    finish_reason   TEXT,
+    tokens_used     INTEGER NOT NULL DEFAULT 0,
+    started_at      TEXT,
+    completed_at    TEXT,
+    UNIQUE(session_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS agentic_tool_calls (
+    id              TEXT PRIMARY KEY,
+    turn_id         TEXT NOT NULL REFERENCES agentic_turns(id) ON DELETE CASCADE,
+    session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    tool_name       TEXT NOT NULL,
+    arguments       TEXT NOT NULL DEFAULT '{}',
+    status          TEXT NOT NULL DEFAULT 'pending',
+    result          TEXT,
+    error           TEXT,
+    started_at      TEXT,
+    completed_at    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS agentic_messages (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    seq             INTEGER NOT NULL,
+    delivery        TEXT NOT NULL DEFAULT 'steer',
+    text            TEXT NOT NULL,
+    admitted_at     TEXT NOT NULL,
+    promoted_at     TEXT,
+    UNIQUE(session_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS agentic_compactions (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    seq             INTEGER NOT NULL,
+    summary         TEXT NOT NULL,
+    recent_context  TEXT,
+    compacted_turn_count INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agentic_lessons (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    seq             INTEGER NOT NULL,
+    lesson          TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_iterations_session ON iterations(session_id, number);
 CREATE INDEX IF NOT EXISTS idx_images_iteration ON images(iteration_id);
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_agentic_turns_session ON agentic_turns(session_id, seq);
+CREATE INDEX IF NOT EXISTS idx_agentic_messages_session ON agentic_messages(session_id, seq);
+CREATE INDEX IF NOT EXISTS idx_agentic_tool_calls_turn ON agentic_tool_calls(turn_id);
 """
 
 

@@ -186,7 +186,7 @@ loop:
       buffer_tokens: 20480     # 类比 opencode DEFAULT_BUFFER
       keep_tokens: 8000        # 压缩后保留的最近 context
       summary_max_tokens: 4096
-      model: "deepseek-v4-flash"  # 压缩使用的轻量模型 (可不同于 Agent A)
+      # 不设独立 model: 直接复用 loop 的 agent_a 主模型, 减少配置复杂度
 
     learning:
       enabled: true
@@ -1032,7 +1032,7 @@ class ContextCompactor:
 
     审计 #8:
     - 用 tiktoken 估算, 不用 // 4
-    - 压缩模型可配置 (config.compaction.model)
+    - 压缩模型可配置 (config.compaction.model) // 不用compaction模型，直接使用主模型进行compaction
     """
 
     SUMMARY_TEMPLATE = """Summarize the conversation below while preserving:

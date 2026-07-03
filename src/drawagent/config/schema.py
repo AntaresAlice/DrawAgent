@@ -61,14 +61,44 @@ class AgentCConfig(BaseModel):
     max_tokens: int = 2048
 
 
+class AgenticCompactionConfig(BaseModel):
+    """Compaction settings for agentic mode (LLM-driven summarization)."""
+
+    enabled: bool = True
+    buffer_tokens: int = 20480
+    keep_tokens: int = 8000
+    summary_max_tokens: int = 4096
+
+
+class AgenticLearningConfig(BaseModel):
+    """Experience accumulation settings for agentic mode."""
+
+    enabled: bool = True
+    max_lessons: int = 10
+
+
+class AgenticLoopConfig(BaseModel):
+    """Agentic mode configuration (LLM-driven loop, coexisting with classic)."""
+
+    max_tool_rounds: int = 10
+    max_agentic_rounds: int = 20
+    max_finalize_rejections: int = 3
+    context_window: int = 65536
+    output_buffer: int = 8192
+    compaction: AgenticCompactionConfig = Field(default_factory=AgenticCompactionConfig)
+    learning: AgenticLearningConfig = Field(default_factory=AgenticLearningConfig)
+
+
 class LoopConfig(BaseModel):
     """Inner loop configuration."""
 
+    engine: Literal["classic", "agentic"] = "classic"
     max_iterations: int = 7
     auto_accept_threshold: float = 8.0
     compaction_threshold_tokens: int = 20000
     keep_recent_iterations: int = 2
     step_mode: bool = False
+    agentic: AgenticLoopConfig = Field(default_factory=AgenticLoopConfig)
 
 
 class MemoryConfig(BaseModel):

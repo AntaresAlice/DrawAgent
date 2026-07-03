@@ -11,6 +11,7 @@ from drawagent.core.types import (
     QualityDecision,
     Session,
 )
+from drawagent.models.agentic_session import AgenticToolCall, AgenticTurnResult
 from drawagent.providers.base import LLMMessage, LLMProvider, LLMStreamEvent
 from drawagent.tools.base import ToolRegistry, ToolContext, ToolResult
 
@@ -294,6 +295,151 @@ class AgentA:
         content = result.get("content", "{}")
         text = content if isinstance(content, str) else str(content)
         return self._parse_quality_decision(text)
+
+    # ------------------------------------------------------------------
+    # Agentic mode: LLM-driven turn
+    # ------------------------------------------------------------------
+
+    async def run_agentic_turn(
+        self,
+        system_prompt: str,
+        messages: list[dict],
+        tools: list[dict],
+        event_bus,
+        verbose: bool = False,
+    ) -> AgenticTurnResult:
+        """Execute a single LLM call + tool settlement for the agentic loop.
+
+        Analogous to opencode's runTurn(): stream LLM, collect text + tool calls,
+        settle tools, return structured result with finalize detection.
+
+        This is NOT a replacement for run_turn() — classic mode still uses run_turn().
+        Agentic mode uses this method because it:
+          - Takes raw dict messages (not LLMMessage objects)
+          - Returns AgenticTurnResult with finalize detection
+          - Emits turn.* events for WebSocket
+          - Does not reference classic Session at all
+        """
+        from datetime import datetime
+        from drawagent.core.verbose_log import VerboseLog
+
+        vlog = VerboseLog.get()
+
+        # Convert to internal message format
+        llm_messages = [LLMMessage(role="system", content=system_prompt)]
+        for m in messages:
+            role = m.get("role", "user")
+            content = m.get("content")
+            tool_calls = m.get("tool_calls")
+            tool_call_id = m.get("tool_call_id")
+            llm_messages.append(LLMMessage(
+                role=role,
+                content=content,
+                tool_calls=tool_calls,
+                tool_call_id=tool_call_id,
+            ))
+
+        vlog.log("agent_a", f"run_agentic_turn: {len(llm_messages)} msgs, tools={len(tools)}")
+
+        # Materialize tools
+        if tools:
+            materialization = self.registry.materialize_all()
+        else:
+            materialization = self.registry.materialize_all()
+
+        # Accumulators
+        accumulated: dict[str, dict] = {}
+        text_parts: list[str] = []
+        finish_reason = None
+        finalized_this_turn = False
+
+        # Stream
+        async for event in self.provider.chat_stream(
+            messages=llm_messages,
+            tools=materialization.definitions,
+        ):
+            if event.type == "text_delta":
+                text_parts.append(event.content)
+                await event_bus.emit("text.delta", {
+                    "content": event.content,
+                    "session_id": self.session.id,
+                })
+            elif event.type == "tool_call_start":
+                if event.tool_call_id:
+                    accumulated[event.tool_call_id] = {
+                        "name": event.tool_name or "",
+                        "arguments": "",
+                    }
+            elif event.type == "tool_call_args":
+                if event.tool_call_id and event.tool_call_id in accumulated:
+                    accumulated[event.tool_call_id]["arguments"] += event.content
+            elif event.type == "step_finish":
+                finish_reason = event.finish_reason
+
+        text = "".join(text_parts)
+        vlog.log("agent_a", f"finish={finish_reason}, text={len(text)}ch, tool_calls={len(accumulated)}")
+
+        # Build tool calls list
+        tool_call_dicts: list[dict] = []
+        for call_id, acc in accumulated.items():
+            if acc.get("arguments"):
+                tool_call_dicts.append({
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": acc["name"],
+                        "arguments": acc["arguments"],
+                    },
+                })
+
+        # Settle tools
+        tool_results: list[AgenticToolCall] = []
+        if tool_call_dicts:
+            ctx = ToolContext(session_id=self.session.id, agent="A")
+            results = await materialization.settle(tool_call_dicts, ctx)
+            for result in results:
+                now = datetime.now()
+                tc = AgenticToolCall(
+                    call_id=result.tool_call_id,
+                    tool_name=result.name,
+                    arguments={},  # will be populated below
+                    status="completed" if result.success else "error",
+                    result={"output": result.output} if result.success else None,
+                    error=result.error,
+                    started_at=now,
+                    completed_at=now,
+                )
+                tool_results.append(tc)
+
+                # Check for finalize
+                if result.name == "finalize" and result.success:
+                    finalized_this_turn = True
+                    await event_bus.emit("session.finalized", {
+                        "session_id": self.session.id,
+                        "accepted_images": result.metadata.get("accepted_images", []),
+                        "rejected_images": result.metadata.get("rejected_images", []),
+                        "reason": result.metadata.get("reason", ""),
+                    })
+
+                await event_bus.emit("tool.completed", {
+                    "session_id": self.session.id,
+                    "call_id": result.tool_call_id,
+                    "tool_name": result.name,
+                    "status": "completed" if result.success else "error",
+                    "error": result.error if not result.success else None,
+                })
+
+        return AgenticTurnResult(
+            text=text,
+            tool_results=tool_results,
+            finish_reason="tool_calls" if tool_results else "stop",
+            finalized=finalized_this_turn,
+            tokens_used=0,
+        )
+
+    # ------------------------------------------------------------------
+    # JSON parsing helpers (shared by classic and agentic paths)
+    # ------------------------------------------------------------------
 
     def _find_json_block(self, text: str, bracket_type: str = "object") -> str | None:
         """Find the first balanced JSON block using bracket counting.

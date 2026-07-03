@@ -123,6 +123,8 @@ async def run_server(args):
     from drawagent.tools.generate_image import GenerateImageTool
     from drawagent.tools.inspect_image import InspectImageTool
     from drawagent.tools.compare_images import CompareImagesTool
+    from drawagent.tools.human_input import AskUserTool
+    from drawagent.tools.finalize import FinalizeTool
     from drawagent.memory.tools import LoadMemoryTool, SearchMemoryTool, SaveMemoryTool
     from drawagent.memory.store import MemoryStore
     from drawagent.memory.index import MemoryIndex
@@ -147,6 +149,8 @@ async def run_server(args):
     registry.register(gen_tool)
     registry.register(inspect_tool)
     registry.register(compare_tool)
+    registry.register(AskUserTool())
+    registry.register(FinalizeTool())
 
     memory_dir = Path(config.memory.base_dir).expanduser()
     store = MemoryStore(memory_dir)
@@ -175,11 +179,17 @@ async def run_server(args):
             await ws_manager.broadcast(session_id, event_type if isinstance(event_type, str) else event_type.value, **data_dict)
 
     for evt in [
+        # Classic events (unchanged)
         "iteration.started", "inspection.plan_ready", "prompt.refined",
         "generation.started", "images.ready",
         "inspection.task_done", "inspection.complete",
         "quality.decision", "loop.terminated", "user.interrupt", "error",
         "agent.question", "user.steer", "user.rollback",
+        # Agentic events (new)
+        "turn.started", "turn.ended", "text.delta",
+        "tool.called", "tool.completed", "tool.failed",
+        "session.finalized", "session.learned", "session.compacted",
+        "interrupt.accepted",
     ]:
         event_bus.on(evt, broadcast_event)
 
@@ -212,6 +222,7 @@ async def run_cli(args):
     from drawagent.tools.inspect_image import InspectImageTool
     from drawagent.tools.compare_images import CompareImagesTool
     from drawagent.tools.human_input import AskUserTool
+    from drawagent.tools.finalize import FinalizeTool
     from drawagent.persistence.database import Database
 
     config = await ConfigLoader.load(Path.cwd(), config_file=args.config)
@@ -319,6 +330,7 @@ async def run_cli(args):
     registry.register(inspect_tool)
     registry.register(compare_tool)
     registry.register(ask_tool)
+    registry.register(FinalizeTool())
 
     from drawagent.memory.tools import LoadMemoryTool, SearchMemoryTool, SaveMemoryTool
     from drawagent.memory.store import MemoryStore
@@ -481,6 +493,7 @@ async def run_cli_noninteractive(args):
     from drawagent.tools.generate_image import GenerateImageTool
     from drawagent.tools.inspect_image import InspectImageTool
     from drawagent.tools.compare_images import CompareImagesTool
+    from drawagent.tools.finalize import FinalizeTool
     from drawagent.persistence.database import Database
 
     config = await ConfigLoader.load(Path.cwd(), config_file=args.config)
@@ -542,6 +555,7 @@ async def run_cli_noninteractive(args):
     registry.register(gen_tool)
     registry.register(inspect_tool)
     registry.register(compare_tool)
+    registry.register(FinalizeTool())
 
     # ── Session resolution ──
     original_session_id = None

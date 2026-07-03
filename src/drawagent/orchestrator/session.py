@@ -287,3 +287,103 @@ class SessionManager:
 
     def is_interrupted(self, session: Session) -> bool:
         return session.interrupt_event.is_set()
+
+    # ===== Agentic mode DB operations (LLM-driven loop) =====
+
+    async def save_agentic_message(self, session_id: str, msg_id: str, seq: int,
+                                   delivery: str, text: str,
+                                   admitted_at: str, promoted_at: str | None = None) -> None:
+        if self._db is None:
+            return
+        await self._db.execute(
+            "INSERT OR REPLACE INTO agentic_messages (id, session_id, seq, delivery, text, admitted_at, promoted_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (msg_id, session_id, seq, delivery, text, admitted_at, promoted_at),
+        )
+        await self._db.commit()
+
+    async def promote_agentic_messages(self, session_id: str, delivery: str,
+                                       cutoff_seq: int | None = None) -> int:
+        if self._db is None:
+            return 0
+        now = datetime.now().isoformat()
+        if cutoff_seq is not None:
+            cursor = await self._db.execute(
+                "UPDATE agentic_messages SET promoted_at = ? "
+                "WHERE session_id = ? AND delivery = ? AND promoted_at IS NULL AND seq <= ?",
+                (now, session_id, delivery, cutoff_seq),
+            )
+        else:
+            cursor = await self._db.execute(
+                "UPDATE agentic_messages SET promoted_at = ? "
+                "WHERE session_id = ? AND delivery = ? AND promoted_at IS NULL",
+                (now, session_id, delivery),
+            )
+        await self._db.commit()
+        return cursor.rowcount
+
+    async def has_pending_agentic_messages(self, session_id: str, delivery: str) -> bool:
+        if self._db is None:
+            return False
+        cursor = await self._db.execute(
+            "SELECT COUNT(*) as cnt FROM agentic_messages "
+            "WHERE session_id = ? AND delivery = ? AND promoted_at IS NULL",
+            (session_id, delivery),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] > 0 if row else False
+
+    async def save_agentic_turn(self, session_id: str, turn_id: str, seq: int,
+                                user_msg_id: str | None, assistant_text: str | None,
+                                finish_reason: str | None, tokens_used: int,
+                                started_at: str | None, completed_at: str | None) -> None:
+        if self._db is None:
+            return
+        await self._db.execute(
+            "INSERT OR REPLACE INTO agentic_turns (id, session_id, seq, user_msg_id, assistant_text, "
+            "finish_reason, tokens_used, started_at, completed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (turn_id, session_id, seq, user_msg_id, assistant_text, finish_reason,
+             tokens_used, started_at, completed_at),
+        )
+        await self._db.commit()
+
+    async def save_agentic_tool_call(self, session_id: str, turn_id: str,
+                                     call_id: str, tool_name: str, arguments: str,
+                                     status: str, result: str | None = None,
+                                     error: str | None = None,
+                                     started_at: str | None = None,
+                                     completed_at: str | None = None) -> None:
+        if self._db is None:
+            return
+        await self._db.execute(
+            "INSERT OR REPLACE INTO agentic_tool_calls (id, turn_id, session_id, tool_name, arguments, "
+            "status, result, error, started_at, completed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (call_id, turn_id, session_id, tool_name, arguments, status, result, error, started_at, completed_at),
+        )
+        await self._db.commit()
+
+    async def save_agentic_compaction(self, session_id: str, comp_id: str, seq: int,
+                                      summary: str, recent_context: str | None,
+                                      compacted_turn_count: int, created_at: str) -> None:
+        if self._db is None:
+            return
+        await self._db.execute(
+            "INSERT OR REPLACE INTO agentic_compactions (id, session_id, seq, summary, recent_context, "
+            "compacted_turn_count, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (comp_id, session_id, seq, summary, recent_context, compacted_turn_count, created_at),
+        )
+        await self._db.commit()
+
+    async def save_agentic_lesson(self, session_id: str, lesson_id: str, seq: int,
+                                  lesson: str, created_at: str) -> None:
+        if self._db is None:
+            return
+        await self._db.execute(
+            "INSERT OR REPLACE INTO agentic_lessons (id, session_id, seq, lesson, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (lesson_id, session_id, seq, lesson, created_at),
+        )
+        await self._db.commit()

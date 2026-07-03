@@ -9,6 +9,8 @@ from drawagent.config.schema import AppConfig
 from drawagent.context.assembler import ContextAssembler
 from drawagent.core.events import EventBus, DrawEvent
 from drawagent.core.types import Session
+from drawagent.models.agentic_session import AgenticSession, InputQueue
+from drawagent.orchestrator.agentic_loop import AgenticLoop
 from drawagent.orchestrator.interrupt import InterruptHandler
 from drawagent.orchestrator.loop import InnerLoop
 from drawagent.orchestrator.session import SessionManager
@@ -87,6 +89,14 @@ class ServerRunner:
         return self._provider_a, self._provider_c
 
     async def _execute_loop(self, session: Session, text: str) -> None:
+        engine = self.config.loop.engine
+        if engine == "agentic":
+            await self._run_agentic_loop(session, text)
+            return
+        # ===== Classic path (unchanged) =====
+        await self._run_classic_loop(session, text)
+
+    async def _run_classic_loop(self, session: Session, text: str) -> None:
         session_id = session.id
         # Preserve original user request on feedback messages
         is_feedback = bool(session.iterations and session.user_request)
@@ -155,6 +165,91 @@ class ServerRunner:
             )
         except Exception as exc:
             logger.exception("Session %s loop error: %s", session_id, exc)
+            await self.event_bus.emit(
+                DrawEvent.ERROR,
+                message=str(exc),
+                session_id=session_id,
+            )
+        finally:
+            self._active_tasks.pop(session_id, None)
+
+    async def _run_agentic_loop(self, classic_session: Session, text: str) -> None:
+        """Agentic mode — LLM-driven generation loop.
+
+        Creates an AgenticSession, sets up the input queue, and runs
+        the full outer+inner LLM-driven loop. The classic Session object
+        is used only to carry the session ID and initial user_request.
+        """
+        session_id = classic_session.id
+        user_request = classic_session.user_request or text
+
+        # Create agentic session
+        agentic_session = AgenticSession(
+            id=session_id,
+            user_request=user_request,
+        )
+
+        # Setup input queue (backed by DB)
+        input_queue = InputQueue(session_id, self.session_manager)
+
+        # Admit initial message as "queue"
+        await input_queue.admit_and_persist(user_request, "queue")
+
+        try:
+            provider_a, provider_c = await self._get_or_create_providers()
+        except ConfigError as e:
+            logger.warning("Session %s agentic provider init failed: %s", session_id, e)
+            await self.event_bus.emit(
+                DrawEvent.ERROR,
+                message=f"API config error: {e}",
+                session_id=session_id,
+            )
+            return
+        except Exception as e:
+            logger.exception("Session %s agentic provider init unexpected error", session_id)
+            await self.event_bus.emit(
+                DrawEvent.ERROR,
+                message=f"AI service init failed: {e}",
+                session_id=session_id,
+            )
+            return
+
+        agent_a = AgentA(
+            provider=provider_a,
+            tool_registry=self.tool_registry,
+            session=classic_session,  # AgentA still needs classic Session for provider/session access
+        )
+
+        # Build config dict for agentic loop (include agent_a + agent_b subsections)
+        loop_config = self.config.loop.model_dump() if hasattr(self.config.loop, "model_dump") else {}
+        loop_config["agent_a"] = self.config.agent_a.model_dump() if hasattr(self.config.agent_a, "model_dump") else {}
+        loop_config["agent_b"] = self.config.agent_b
+        agentic_loop = AgenticLoop(
+            session=agentic_session,
+            agent_a=agent_a,
+            registry=self.tool_registry,
+            config=loop_config,
+            event_bus=self.event_bus,
+            session_manager=self.session_manager,
+        )
+        agentic_loop.set_queue(input_queue)
+
+        try:
+            result = await agentic_loop.run()
+            logger.info(
+                "Session %s agentic loop finished: turns=%d, lessons=%d",
+                session_id,
+                len(result.turns),
+                len(result.learned_lessons),
+            )
+            await self.event_bus.emit(
+                DrawEvent.LOOP_TERMINATED,
+                reason="agentic_completed",
+                session_id=session_id,
+                iterations_completed=len(result.iterations),
+            )
+        except Exception as exc:
+            logger.exception("Session %s agentic loop error: %s", session_id, exc)
             await self.event_bus.emit(
                 DrawEvent.ERROR,
                 message=str(exc),

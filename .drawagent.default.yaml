@@ -32,10 +32,25 @@ agent_c:
   max_tokens: 2048
 
 loop:
+  engine: classic
   max_iterations: 7
   auto_accept_threshold: 8.0
   compaction_threshold_tokens: 20000
   keep_recent_iterations: 2
+  agentic:
+    max_tool_rounds: 10
+    max_agentic_rounds: 20
+    max_finalize_rejections: 3
+    context_window: 65536
+    output_buffer: 8192
+    compaction:
+      enabled: true
+      buffer_tokens: 20480
+      keep_tokens: 8000
+      summary_max_tokens: 4096
+    learning:
+      enabled: true
+      max_lessons: 10
 
 memory:
   base_dir: ~/.drawagent/memory

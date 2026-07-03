@@ -115,6 +115,51 @@ class ToolRegistry:
     def list_names(self) -> list[str]:
         return list(self._tools.keys())
 
+    def materialize_all(self):
+        """Materialize ALL registered tools (agentic mode — no filter).
+
+        Analogous to opencode's materialize without permission filtering.
+        The LLM autonomously decides which tools to call; the program
+        does not restrict tool availability.
+        """
+        definitions = [t.to_openai_schema() for t in self._tools.values()]
+
+        async def settle(tool_calls: list[dict], ctx: ToolContext) -> list[ToolResult]:
+            results: list[ToolResult] = []
+            for call in tool_calls:
+                fn = call["function"]
+                name = fn["name"]
+                call_id = call["id"]
+
+                tool = self._tools.get(name)
+                if tool is None:
+                    results.append(ToolResult(
+                        tool_call_id=call_id,
+                        name=name,
+                        output="",
+                        error=f"Unknown tool: {name}",
+                    ))
+                    continue
+
+                try:
+                    args = json.loads(fn["arguments"])
+                except json.JSONDecodeError as e:
+                    results.append(ToolResult(
+                        tool_call_id=call_id,
+                        name=name,
+                        output="",
+                        error=f"Invalid JSON arguments: {e}",
+                    ))
+                    continue
+
+                ctx.tool_call_id = call_id
+                result = await tool.execute(args, ctx)
+                results.append(result)
+
+            return results
+
+        return ToolMaterialization(definitions=definitions, settle=settle)
+
     def materialize(
         self, enabled_tools: set[str] | None = None
     ) -> ToolMaterialization:

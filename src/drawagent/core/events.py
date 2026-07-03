@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Union
 
 
 class DrawEvent(str, Enum):
@@ -49,16 +49,20 @@ class EventBus:
     Reference: opencode's EventV2 service pattern.
     """
 
-    _listeners: dict[DrawEvent, list[EventHandler]] = field(default_factory=dict)
+    _listeners: dict[DrawEvent | str, list[EventHandler]] = field(default_factory=dict)
 
-    def on(self, event_type: DrawEvent, handler: EventHandler) -> None:
+    def on(self, event_type: DrawEvent | str, handler: EventHandler) -> None:
         self._listeners.setdefault(event_type, []).append(handler)
 
-    def off(self, event_type: DrawEvent, handler: EventHandler) -> None:
+    def off(self, event_type: DrawEvent | str, handler: EventHandler) -> None:
         handlers = self._listeners.get(event_type, [])
         if handler in handlers:
             handlers.remove(handler)
 
-    async def emit(self, event_type: DrawEvent, **data: Any) -> None:
+    async def emit(self, event_type: DrawEvent | str, data: dict[str, Any] | None = None, **kwargs: Any) -> None:
+        merged = {}
+        if data:
+            merged.update(data)
+        merged.update(kwargs)
         for handler in self._listeners.get(event_type, []):
-            await handler(event_type, data)
+            await handler(event_type, merged)

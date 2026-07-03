@@ -2,6 +2,7 @@ from .base import BaseTool, ToolRegistry, ToolResult, ToolContext, ToolMateriali
 from .generate_image import GenerateImageTool
 from .inspect_image import InspectImageTool
 from .human_input import AskUserTool
+from .finalize import FinalizeTool
 
 __all__ = [
     "BaseTool",
@@ -13,4 +14,5 @@ __all__ = [
     "GenerateImageTool",
     "InspectImageTool",
     "AskUserTool",
+    "FinalizeTool",
 ]
