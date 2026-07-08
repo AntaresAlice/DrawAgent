@@ -16,10 +16,12 @@ agent_b:
   api_base: http://localhost:8000
   endpoint: /api/generate
   default_params:
-    width: 1024
-    height: 1024
-    steps: 8
-    guidance: 3.5
+    width: 960
+    height: 1280
+    steps: 30
+    guidance: 7.0
+    cfg_truncation: 0.6
+    max_sequence_length: 512
     seed: -1
   prompt_format: zimage
 

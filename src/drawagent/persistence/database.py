@@ -147,7 +147,8 @@ class Database:
         return self._conn
 
     async def _migrate(self) -> None:
-        assert self._conn is not None
+        if self._conn is None:
+            raise RuntimeError("Database not connected")
         await self._conn.executescript(SCHEMA_SQL)
         await self._conn.commit()
 

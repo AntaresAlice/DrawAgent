@@ -80,8 +80,8 @@ const ActivityStream = {
             <div class="agentic-tool-trigger" onclick="ActivityStream._toggleTool(this)">
                 <span class="agentic-tool-chevron">▶</span>
                 <span class="agentic-tool-icon">${icon}</span>
-                <span class="agentic-tool-name">${toolName}</span>
-                <span class="agentic-tool-summary">${shortResult}</span>
+                <span class="agentic-tool-name">${this._escHtml(toolName)}</span>
+                <span class="agentic-tool-summary">${this._escHtml(shortResult)}</span>
             </div>
             <div class="agentic-tool-detail" style="display:none;">
                 <pre>${this._escHtml(JSON.stringify(data, null, 2))}</pre>
@@ -91,15 +91,15 @@ const ActivityStream = {
 
         if (toolName === 'generate_image' && !isError) {
             if (header) header.textContent = 'Generated image ✓';
-            // Extract image path from tool result
             if (data.result && data.result.output) {
-                const match = data.result.output.match(/([A-Z]:[^\s]+\.png)/i);
+                const match = data.result.output.match(/((?:\/|[A-Z]:)[^\s,;]+\.png)/i);
                 if (match) {
                     const imgPath = match[1];
-                    const filename = imgPath.split('\\').pop().split('/').pop();
+                    const filename = imgPath.replace(/\\/g, '/').split('/').pop();
                     const imgEl = document.createElement('div');
                     imgEl.className = 'agentic-image-preview';
-                    imgEl.innerHTML = `<img src="/api/images/${filename}" alt="${filename}" style="max-width:180px;max-height:240px;border-radius:8px;margin:8px 0;cursor:pointer;" onclick="Renderer.openViewer(['/api/images/${filename}'], 0)">`;
+                    const allImages = [API.imageUrl(filename)];
+                    imgEl.innerHTML = '<img src="' + API.imageUrl(filename) + '" alt="' + this._escHtmlAttr(filename) + '" style="max-width:180px;max-height:240px;border-radius:8px;margin:8px 0;cursor:pointer;" onclick="Viewer.open(' + JSON.stringify(allImages) + ', 0)">';
                     toolsEl.appendChild(imgEl);
                 }
             }
@@ -189,6 +189,10 @@ const ActivityStream = {
         const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
+    },
+
+    _escHtmlAttr(s) {
+        return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     },
 
     _scroll() {

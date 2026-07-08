@@ -40,11 +40,11 @@ const Renderer = {
         const card = document.createElement('div');
         card.className = 'message agent';
         card.id = 'clarificationCard';
-        const escSummary = summary.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const escSummary = this._escHtml(summary);
         card.innerHTML = `<div class="message-avatar"><i class="fa-solid fa-robot"></i></div>
             <div class="message-content">
                 <div style="margin-bottom:10px;"><strong>需求确认</strong></div>
-                <div style="color:var(--text-secondary);margin-bottom:12px;">${summary}</div>
+                <div style="color:var(--text-secondary);margin-bottom:12px;">${escSummary}</div>
                 ${estIterations ? `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">预计 ${estIterations} 轮迭代</div>` : ''}
                 <div style="display:flex;gap:8px;">
                     <button class="btn btn-primary" style="flex:0;padding:6px 14px;font-size:12px;" onclick="WSClient.send({type:'clarify_accept'});document.getElementById('clarificationCard')?.remove();">
@@ -66,13 +66,13 @@ const Renderer = {
 
         const retryText = retryPrompt || message;
         const escapedRetry = retryText.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-        const escapedMsg = message.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const escapedMsg = this._escHtml(message);
         const card = document.createElement('div');
         card.className = 'message agent error-card';
         card.innerHTML = `<div class="message-avatar"><i class="fa-solid fa-circle-exclamation" style="color:var(--error);"></i></div>
             <div class="message-content" style="border-color:var(--error);background:rgba(239,68,68,0.05);">
                 <div style="margin-bottom:8px;"><i class="fa-solid fa-triangle-exclamation" style="color:var(--error);"></i> <strong>错误</strong></div>
-                <div style="color:var(--text-secondary);font-size:13px;margin-bottom:10px;">${message}</div>
+                <div style="color:var(--text-secondary);font-size:13px;margin-bottom:10px;">${escapedMsg}</div>
                 <button class="btn btn-primary retry-btn" onclick="AppActions.retryMessage('${escapedRetry}')" style="font-size:12px;padding:6px 14px;flex:0;">
                     <i class="fa-solid fa-rotate-right"></i> 重试
                 </button>
@@ -100,7 +100,7 @@ const Renderer = {
         const statusClass = passed ? 'pass' : 'fail';
         const statusIcon = passed ? 'fa-circle-check' : 'fa-circle-exclamation';
         const statusText = _t(passed ? 'qualityPassed' : 'issuesFound');
-        const escPrompt = (decision && decision.prompt || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        const escPrompt = this._escJsStr(decision && decision.prompt || '');
 
         // Get previous iteration's prompt for diff
         let diffHtml = '';
@@ -142,8 +142,8 @@ const Renderer = {
                         </div>
                     </div>`;
                 }).join('')}</div>` : ''}
-                ${inspections && inspections.length ? inspections.map(i => `<div class="inspection-item ${i.passed ? 'pass' : 'fail'}"><span class="status-icon"><i class="fa-solid ${i.passed ? 'fa-circle-check' : 'fa-circle-xmark'}"></i></span><div><strong>${i.task_name || 'Inspection'}</strong><div style="color:var(--text-secondary);margin-top:2px;">${(i.observation || '').slice(0, 200)}</div></div></div>`).join('') : ''}
-                ${decision ? `<div class="decision-banner ${decision.passed ? 'pass' : 'fail'}"><i class="fa-solid ${decision.passed ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i><span>${decision.reasoning || _t(decision.passed ? 'decisionPassed' : 'decisionNeedsImprovement')}</span></div>` : ''}
+                ${inspections && inspections.length ? inspections.map(i => `<div class="inspection-item ${i.passed ? 'pass' : 'fail'}"><span class="status-icon"><i class="fa-solid ${i.passed ? 'fa-circle-check' : 'fa-circle-xmark'}"></i></span><div><strong>${this._escHtml(i.task_name || 'Inspection')}</strong><div style="color:var(--text-secondary);margin-top:2px;">${this._escHtml((i.observation || '').slice(0, 200))}</div></div></div>`).join('') : ''}
+                ${decision ? `<div class="decision-banner ${decision.passed ? 'pass' : 'fail'}"><i class="fa-solid ${decision.passed ? 'fa-circle-check' : 'fa-circle-exclamation'}"></i><span>${this._escHtml(decision.reasoning || _t(decision.passed ? 'decisionPassed' : 'decisionNeedsImprovement'))}</span></div>` : ''}
             </div>`;
 
         container.appendChild(card);
@@ -175,6 +175,10 @@ const Renderer = {
     },
 
     _escHtml(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); },
+
+    _escJsStr(s) {
+        return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
+    },
 
     addIterationImages(images, iteration) {
         // Called for incremental updates during generation
@@ -248,7 +252,7 @@ const Renderer = {
             html += `<div style="background:var(--bg);border-radius:var(--radius-sm);padding:16px;">
                 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
                     <strong>${label}</strong>
-                    <button class="btn btn-secondary" style="flex:0;font-size:11px;padding:4px 10px;" onclick="AppActions.rollbackTo(${idx + 1})">回退到此</button>
+                    <button class="btn btn-secondary" style="flex:0;font-size:11px;padding:4px 10px;" onclick="AppActions.rollbackTo(${idx})">回退到此</button>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
                     ${Array.from(images).map(img => `<img src="${img.src}" style="width:120px;height:120px;object-fit:cover;border-radius:4px;" onclick="Viewer.open([${Array.from(images).map(im => `'${im.src}'`).join(',')}], 0)">`).join('')}
@@ -325,7 +329,7 @@ const Renderer = {
             section.className = 'inspection-plan-section';
             body.appendChild(section);
         }
-        const tasks = plan.map(t => `<div class="plan-task"><i class="fa-solid fa-circle"></i> ${t.name || t.description || ''}</div>`).join('');
+        const tasks = plan.map(t => `<div class="plan-task"><i class="fa-solid fa-circle"></i> ${this._escHtml(t.name || t.description || '')}</div>`).join('');
         section.innerHTML = `<div class="iteration-prompt-header"><i class="fa-solid fa-clipboard-check"></i> 检查计划 (${plan.length}项)</div><div class="plan-tasks">${tasks}</div>`;
     },
 
@@ -360,7 +364,7 @@ const Renderer = {
         const item = document.createElement('div');
         item.className = `inspection-item ${result.passed ? 'pass' : 'fail'}`;
         item.setAttribute('data-task', taskName);
-        item.innerHTML = `<span class="status-icon"><i class="fa-solid ${result.passed ? 'fa-circle-check' : 'fa-circle-xmark'}"></i></span><div><strong>${taskName}</strong><div style="color:var(--text-secondary);margin-top:2px;">${(result.observation || '').slice(0, 200)}</div></div>`;
+        item.innerHTML = `<span class="status-icon"><i class="fa-solid ${result.passed ? 'fa-circle-check' : 'fa-circle-xmark'}"></i></span><div><strong>${this._escHtml(taskName)}</strong><div style="color:var(--text-secondary);margin-top:2px;">${this._escHtml((result.observation || '').slice(0, 200))}</div></div>`;
         list.appendChild(item);
     },
 
@@ -439,7 +443,7 @@ const Renderer = {
             `<div class="session-item ${s.id === AppState.currentSessionId ? 'active' : ''}" onclick="AppActions.selectSession('${s.id}')">
                 <span class="session-icon"><i class="fa-solid fa-message"></i></span>
                 <div class="session-info">
-                    <div class="session-title">${s.user_request || _t('newSessionTitle')}</div>
+                    <div class="session-title">${this._escHtml(s.user_request || _t('newSessionTitle'))}</div>
                     <div class="session-date">${s.created_at ? new Date(s.created_at).toLocaleString() : ''}</div>
                 </div>
                 <button class="session-action-btn" onclick="event.stopPropagation(); AppActions.selectSession('${s.id}'); setTimeout(() => AppActions.exportSession(), 100);" title="${_t('download')}">

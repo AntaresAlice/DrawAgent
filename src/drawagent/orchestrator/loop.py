@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime
 
 from drawagent.agents.agent_a import AgentA
@@ -22,13 +23,12 @@ from drawagent.tools.base import ToolRegistry
 from drawagent.orchestrator.interrupt import InterruptHandler
 from drawagent.orchestrator.session import SessionManager
 
-_LOOP_LOG = __import__("logging").getLogger("drawagent.loop")
+_LOOP_LOG = logging.getLogger("drawagent.loop")
 
 
 # Maximum wait for user step acknowledgment (seconds)
 STEP_WAIT_TIMEOUT = 300
 from drawagent.providers.base import LLMMessage
-from drawagent.tools.base import ToolRegistry
 
 
 class LoopResult:
@@ -126,8 +126,7 @@ class InnerLoop:
                     )
                     self.assembler.set_compacted_history(compacted)
                     self.agent_a._compacted = compacted
-                    logger = __import__("logging").getLogger("drawagent.loop")
-                    logger.info("Context compacted: %d iterations → summary", len(old_iters))
+                    _LOOP_LOG.info("Context compacted: %d iterations → summary", len(old_iters))
 
             # ── Check interrupt before each iteration ──
             if self.session_mgr.is_interrupted(self.session):
@@ -189,7 +188,8 @@ class InnerLoop:
                             timeout=120.0,
                         )
                     except asyncio.TimeoutError:
-                        pass
+                        _LOOP_LOG.warning("Clarification timeout after 120s — continuing without user confirmation")
+                        self.session.pending_action = "clarify_done"
                     self.session_mgr.clear_interrupt(self.session)
                     # If user modified request, re-clarify on next iteration
                     if self.session.pending_action != "clarify_done":
@@ -252,7 +252,7 @@ class InnerLoop:
             # ── Phase 3: GENERATING ──
             self.session_mgr.transition(self.session, SessionState.GENERATING)
             VerboseLog.get().log("loop", f"Phase 3 GENERATING prompt=\"{current_prompt[:100]}...\" iteration={iteration}")
-            print(f"  [Loop] Phase 3 GENERATING: prompt=\"{current_prompt[:80]}...\"", flush=True)
+            _LOOP_LOG.info("Phase 3 GENERATING: prompt=\"%s...\"", current_prompt[:80])
             await self.events.emit(DrawEvent.GENERATION_STARTED, iteration=iteration, prompt=current_prompt[:200])
 
             try:
@@ -288,12 +288,11 @@ class InnerLoop:
                 )
 
             images = self._extract_images_from_tool_results(gen_turn.tool_results, current_prompt, iteration)
-            print(f"  [Loop] Got {len(images)} image(s) from {len(gen_turn.tool_results)} tool result(s)")
+            _LOOP_LOG.info("Got %d image(s) from %d tool result(s)", len(images), len(gen_turn.tool_results))
             if gen_turn.tool_results:
                 for tr in gen_turn.tool_results:
                     if getattr(tr, "error", None):
-                        print(f"  [Loop] Tool error: {tr.error[:200]}")
-                        _LOOP_LOG.warning("  Tool error: %s", tr.error[:300])
+                        _LOOP_LOG.warning("Tool error: %s", tr.error[:300])
             self.images_history.append(images)
             serializable_images = [
                 {
@@ -625,6 +624,16 @@ class InnerLoop:
             return "rollback"
         if action == "pause":
             self.session.state = SessionState.INTERRUPTED
+            self.session.interrupt_event.clear()
+            try:
+                await asyncio.wait_for(
+                    self.session.interrupt_event.wait(),
+                    timeout=300,
+                )
+            except asyncio.TimeoutError:
+                pass
+            self.session.state = SessionState.GENERATING
+            return "continue"
         if action in ("step", "next", "continue"):
             return "continue"
         if action == "step_paused":

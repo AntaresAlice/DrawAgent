@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import AsyncIterator
 
 from drawagent.agents.prompts import PROMPT_INSPECTION_PLAN, PROMPT_EVALUATE, PROMPT_REFINE
@@ -109,7 +110,9 @@ class AgentA:
                 finish_reason = event.finish_reason
 
         text = "".join(text_parts)
-        print(f"  [AgentA] finish={finish_reason}, text={len(text)}ch, tool_calls={len(accumulated)}", flush=True)
+        logging.getLogger("drawagent.agent_a").info(
+            "finish=%s, text=%dch, tool_calls=%d", finish_reason, len(text), len(accumulated)
+        )
 
         for call_id, acc in accumulated.items():
             if acc["arguments"]:
@@ -124,15 +127,16 @@ class AgentA:
 
         tool_results: list[ToolResult] = []
         if tool_calls_accumulated:
-            print(f"  [AgentA] Calling {tool_calls_accumulated[0]['function']['name']}("
-                  f"{tool_calls_accumulated[0]['function']['arguments'][:120]}...)", flush=True)
+            _aqlog = logging.getLogger("drawagent.agent_a")
+            _aqlog.info("Calling %s(%s...)", tool_calls_accumulated[0]['function']['name'],
+                        tool_calls_accumulated[0]['function']['arguments'][:120])
             tool_results = await materialization.settle(
                 tool_calls_accumulated,
                 ToolContext(session_id=self.session.id, agent="A"),
             )
             for tr in tool_results:
                 if tr.error:
-                    print(f"  [AgentA] Tool ERROR: {tr.error[:200]}", flush=True)
+                    _aqlog.warning("Tool ERROR: %s", tr.error[:200])
 
             # OpenAI/DeepSeek requires assistant msg with tool_calls before tool msgs
             messages.append(LLMMessage(
@@ -168,7 +172,7 @@ class AgentA:
                 tool_results.extend(cont_results)
                 for tr in cont_results:
                     if tr.error:
-                        print(f"  [AgentA] Continuation tool ERROR: {tr.error[:200]}", flush=True)
+                        logging.getLogger("drawagent.agent_a").warning("Continuation tool ERROR: %s", tr.error[:200])
 
                 messages.append(LLMMessage(role="assistant", content=None, tool_calls=cont_tool_calls))
                 for tr in cont_results:
@@ -389,6 +393,15 @@ class AgentA:
                     },
                 })
 
+        # Parse tool call arguments for persistence + event emission
+        import json as _json
+        _parsed_args: dict[str, dict] = {}
+        for td in tool_call_dicts:
+            try:
+                _parsed_args[td["id"]] = _json.loads(td["function"]["arguments"])
+            except (json.JSONDecodeError, Exception):
+                _parsed_args[td["id"]] = {"_raw": td["function"]["arguments"]}
+
         # Settle tools
         tool_results: list[AgenticToolCall] = []
         if tool_call_dicts:
@@ -399,7 +412,7 @@ class AgentA:
                 tc = AgenticToolCall(
                     call_id=result.tool_call_id,
                     tool_name=result.name,
-                    arguments={},  # will be populated below
+                    arguments=_parsed_args.get(result.tool_call_id, {}),
                     status="completed" if result.success else "error",
                     result={"output": result.output} if result.success else None,
                     error=result.error,
@@ -411,14 +424,13 @@ class AgentA:
                 # Check for finalize
                 if result.name == "finalize" and result.success:
                     finalized_this_turn = True
-                    # Note: session.finalized event is emitted by AgenticLoop,
-                    # not here — tool executor should not decide loop semantics.
 
                 await event_bus.emit("tool.completed", {
                     "session_id": self.session.id,
                     "call_id": result.tool_call_id,
                     "tool_name": result.name,
                     "status": "completed" if result.success else "error",
+                    "result": {"output": result.output} if result.success else None,
                     "error": result.error if not result.success else None,
                 })
 

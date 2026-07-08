@@ -231,6 +231,7 @@ class AgenticLoop:
                 # 7. Determine continuity
                 if result.finalized:
                     if self._verify_finalize(result):
+                        self.session.finalize_rejection_count = 0
                         needs_continuation = False
                         await self.event_bus.emit("session.finalized", {
                             "session_id": self.session.id,

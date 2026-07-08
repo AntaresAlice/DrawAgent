@@ -262,7 +262,7 @@ async def run_cli(args):
     async def on_images_ready(evt_type, data):
         images = data.get("images", [])
         for img in images:
-            print(f"  [Image] {img.filename} (seed={img.seed}, {img.width}x{img.height})")
+            print(f"  [Image] {img['filename']} (seed={img['seed']}, {img['width']}x{img['height']})")
     async def on_inspection_done(evt_type, data):
         task = data.get("task", "?")
         result = data.get("result")
@@ -284,13 +284,14 @@ async def run_cli(args):
         print(f"\n  [Step] {msg}")
         print("  /next (Enter) | /accept | /steer <msg> | /rollback | /quit | /status")
         loop = asyncio.get_running_loop()
-        user_input = (await loop.run_in_executor(None, input, "  > ")).strip().lower()
+        user_input_raw = (await loop.run_in_executor(None, input, "  > ")).strip()
+        user_input = user_input_raw.lower()
         if user_input in ("", "/next", "/step", "/continue"):
             session.pending_action = "next"
         elif user_input == "/accept":
             session.pending_action = "accept"
         elif user_input.startswith("/steer"):
-            session.steer_message = user_input[len("/steer"):].strip()
+            session.steer_message = user_input_raw[len("/steer"):].strip()
             session.pending_action = "steer"
         elif user_input == "/rollback":
             session.pending_action = "rollback"
@@ -520,7 +521,7 @@ async def run_cli_noninteractive(args):
         print(f"  [Generate] Calling Agent B...")
     async def on_images_ready(evt_type, data):
         for img in data.get("images", []):
-            print(f"  [Image] {img.filename} (seed={img.seed}, {img.width}x{img.height})")
+            print(f"  [Image] {img['filename']} (seed={img['seed']}, {img['width']}x{img['height']})")
     async def on_inspect_done(evt_type, data):
         task = data.get("task", "?")
         result = data.get("result")

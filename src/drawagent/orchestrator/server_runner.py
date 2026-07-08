@@ -103,8 +103,7 @@ class ServerRunner:
         is_feedback = bool(session.iterations and session.user_request)
         if is_feedback:
             session.steer_message = text
-            _LOOP_LOG = __import__("logging").getLogger("drawagent.loop")
-            _LOOP_LOG.info("Session %s received feedback: %s", session_id, text[:120])
+            logger.info("Session %s received feedback: %s", session_id, text[:120])
         else:
             session.user_request = text
 
@@ -273,6 +272,11 @@ class ServerRunner:
             return True
         return False
 
+    def cleanup_session(self, session_id: str) -> None:
+        """Remove agentic state for a deleted session to prevent memory leak."""
+        self._agentic_state.pop(session_id, None)
+        self._active_tasks.pop(session_id, None)
+
     def get_agentic_state(self, session_id: str) -> tuple[AgenticSession, InputQueue] | None:
         """Return agentic session + input queue if this session uses agentic mode."""
         return self._agentic_state.get(session_id)
@@ -307,8 +311,14 @@ class ServerRunner:
             if section is None:
                 logger.warning("Unknown config section: %s", section_name)
                 continue
+            if not isinstance(section_data, dict):
+                logger.warning("Config section %s is not a dict, skipping", section_name)
+                continue
             for key, value in section_data.items():
                 if hasattr(section, key):
+                    if key == "api_key" and value and not isinstance(value, str):
+                        logger.warning("Invalid api_key type for %s.%s, skipping", section_name, key)
+                        continue
                     setattr(section, key, value)
                     logger.info("Config updated: %s.%s = %s", section_name, key, value if key != "api_key" else "***")
         self._provider_a = None
@@ -338,12 +348,19 @@ class ServerRunner:
         import yaml
 
         def _model_to_dict(obj):
-            """Convert a Pydantic model to a serializable dict, excluding None/empty."""
+            """Convert Pydantic model to dict, excluding secrets recursively."""
             if hasattr(obj, "model_dump"):
-                return obj.model_dump(exclude_none=True, exclude={"api_key"})
+                return obj.model_dump(exclude_none=True, mode="json")
             return obj
 
+        def _strip_api_keys(d):
+            """Recursively remove api_key fields from nested dicts."""
+            if isinstance(d, dict):
+                return {k: _strip_api_keys(v) for k, v in d.items() if k != "api_key"}
+            return d
+
         config_dict = _model_to_dict(self.config)
+        config_dict = _strip_api_keys(config_dict)
         try:
             with open(self._config_file, "w", encoding="utf-8") as f:
                 yaml.safe_dump(config_dict, f, allow_unicode=True, default_flow_style=False, sort_keys=False)

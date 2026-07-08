@@ -67,7 +67,9 @@ async def create_session(req: CreateSessionRequest):
 async def list_sessions():
     result = []
     for sid in _session_manager.list_ids():
-        session = _session_manager.get(sid)
+        session = _session_manager.get_or_none(sid)
+        if session is None:
+            continue
         result.append(SessionInfo(
             id=session.id,
             created_at=session.created_at.isoformat(),
@@ -166,7 +168,11 @@ async def get_history(session_id: str):
 
 @router.get("/images/{filename}")
 async def serve_image(filename: str):
-    image_path = _output_dir / filename
+    image_path = (_output_dir / filename).resolve()
+    try:
+        image_path.relative_to(_output_dir)
+    except ValueError:
+        raise HTTPException(403, "Access denied")
     if not image_path.exists():
         raise HTTPException(404, "Image not found")
     return FileResponse(image_path, media_type="image/png")
@@ -177,6 +183,8 @@ async def delete_session(session_id: str):
     await _session_manager.delete(session_id)
     _sessions_store.pop(session_id, None)
     _message_ids.pop(session_id, None)
+    if _runner is not None and hasattr(_runner, "cleanup_session"):
+        _runner.cleanup_session(session_id)
     return {"deleted": True}
 
 
@@ -255,7 +263,13 @@ async def update_config(req: dict):
     (agent_a, agent_b, agent_c). Updates runtime config and clears
     cached providers so next request uses new settings.
     """
-    logger.info("Config update requested: %s", {k: {sk: str(sv)[:100] for sk, sv in (v or {}).items()} for k, v in (req or {}).items()})
+    _log_safe = {}
+    for k, v in (req or {}).items():
+        if isinstance(v, dict):
+            _log_safe[k] = {sk: (str(sv)[:100] if sk != "api_key" else "***") for sk, sv in v.items()}
+        else:
+            _log_safe[k] = str(v)[:100] if k != "api_key" else "***"
+    logger.info("Config update requested: %s", _log_safe)
     if _runner is not None:
         _runner.update_config(req)
         return {"updated": True, "note": "Config applied and persisted to file. Providers will be recreated on next request."}

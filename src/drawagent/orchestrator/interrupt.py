@@ -38,9 +38,12 @@ class InterruptHandler:
 
         if action == "pause":
             session.state = SessionState.INTERRUPTED
+            session.pending_action = "pause"
+            session.interrupt_event.set()
 
         elif action == "resume":
             session.state = SessionState.GENERATING
+            session.pending_action = None
             session.interrupt_event.clear()
 
         elif action == "accept_current":

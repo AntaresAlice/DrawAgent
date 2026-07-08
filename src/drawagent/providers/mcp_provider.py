@@ -97,7 +97,8 @@ class MCPProvider:
             raise
 
     async def _http_initialize(self) -> None:
-        assert self._http_client is not None
+        if self._http_client is None:
+            raise RuntimeError("HTTP client not initialized")
         resp = await self._http_client.post(
             self.config.mcp_url,
             json={"jsonrpc": "2.0", "method": "initialize", "params": {
@@ -129,9 +130,8 @@ class MCPProvider:
         self._initialized = True
 
     async def _send_json_rpc_stdio(self, method: str, params: dict) -> dict:
-        assert self._process is not None
-        assert self._process.stdin is not None
-        assert self._process.stdout is not None
+        if self._process is None or self._process.stdin is None or self._process.stdout is None:
+            raise RuntimeError("MCP stdio process not running")
 
         request = json.dumps({
             "jsonrpc": "2.0",

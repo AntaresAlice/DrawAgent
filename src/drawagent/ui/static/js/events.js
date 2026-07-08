@@ -298,7 +298,7 @@ const AppActions = {
         Renderer.showToast(_t('rollbackApplied'), 'info');
     },
 
-    applySettings() {
+    async applySettings() {
         const p = AppState.settings.generationParams;
         p.width = parseInt(document.getElementById('widthSlider').value);
         p.height = parseInt(document.getElementById('heightSlider').value);
@@ -315,6 +315,25 @@ const AppActions = {
         updateQuickParamsUI();
         document.getElementById('settingsPanel').classList.remove('active');
         Renderer.showToast(_t('settingsApplied'), 'success');
+
+        // Push generation params to backend so they take effect immediately
+        try {
+            await API.updateConfig({
+                agent_b: {
+                    default_params: {
+                        width: p.width,
+                        height: p.height,
+                        steps: p.steps,
+                        guidance: p.guidance,
+                        cfg_truncation: p.cfgTruncation,
+                        seed: p.seed,
+                    },
+                },
+                loop: { max_iterations: AppState.settings.maxIterations },
+            });
+        } catch (e) {
+            console.warn('Backend quick-params sync failed:', e);
+        }
     },
 
     resetSettings() {
