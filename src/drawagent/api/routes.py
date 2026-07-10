@@ -222,9 +222,16 @@ async def get_config():
                 "max_tokens": cfg.agent_c.max_tokens,
             },
             "loop": {
+                "engine": cfg.loop.engine,
                 "max_iterations": cfg.loop.max_iterations,
                 "auto_accept_threshold": cfg.loop.auto_accept_threshold,
                 "step_mode": cfg.loop.step_mode,
+                "agentic": {
+                    "max_tool_rounds": cfg.loop.agentic.max_tool_rounds,
+                    "max_agentic_rounds": cfg.loop.agentic.max_agentic_rounds,
+                    "max_finalize_rejections": cfg.loop.agentic.max_finalize_rejections,
+                    "max_images_per_inspection": cfg.loop.agentic.max_images_per_inspection,
+                },
             },
         }
     # Fallback: load from file (without --config awareness)

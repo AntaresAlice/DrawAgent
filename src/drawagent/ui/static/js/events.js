@@ -54,6 +54,8 @@ const EventRouter = {
         switch (event.type) {
             case 'iteration.started':
                 AppState.currentIteration = event.iteration || 1;
+                Renderer.removeLoading();
+                Renderer.showLoading();
                 Renderer.setProgress(AppState.currentIteration, AppState.maxIterations);
                 Renderer.addIterationCard(AppState.currentIteration, [], [], null);
                 AppState._phase = 'planning';
@@ -127,6 +129,8 @@ const EventRouter = {
                 break;
 
             case 'agent.question':
+                Renderer.removeLoading();
+                Renderer.setLoading(false);
                 Renderer.addClarificationCard(event.text || '');
                 break;
 
@@ -139,6 +143,8 @@ const EventRouter = {
                 break;
 
             case 'clarification.needed':
+                Renderer.removeLoading();
+                Renderer.setLoading(false);
                 Renderer.addClarificationCard(event.summary || '', event.estimated_iterations || 7);
                 break;
 
@@ -374,11 +380,17 @@ const AppActions = {
             apiKey: document.getElementById('ssApiKeyC').value,
             temperature: parseFloat(document.getElementById('ssTemperatureC').value) || 0.3,
         };
+        mc.loop = {
+            engine: document.getElementById('ssEngine').value,
+        };
+        // Reset mode tracking so next message uses correct event dispatch
+        AppState.isAgentic = (mc.loop.engine === 'agentic');
         AppState.saveSettings();
         document.getElementById('systemSettingsOverlay').classList.remove('active');
 
         // Push config to backend so runtime uses new settings immediately
         try {
+            const ssStep = document.getElementById('ssStepMode');
             const backendConfig = {
                 agent_a: {
                     provider: mc.agentA.provider,
@@ -406,6 +418,10 @@ const AppActions = {
                     api_key: mc.agentC.apiKey || null,
                     temperature: mc.agentC.temperature,
                 },
+                loop: {
+                    engine: mc.loop.engine,
+                    step_mode: ssStep ? ssStep.checked : false,
+                },
             };
             const result = await API.updateConfig(backendConfig);
             if (result.updated) {
@@ -424,6 +440,7 @@ const AppActions = {
             agentA: { provider: 'openai', model: 'gpt-4o', apiBase: 'https://api.openai.com/v1', apiKey: '', temperature: 0.7 },
             agentB: { type: 'http', model: 'z-image', apiBase: 'http://localhost:8000', endpoint: '/api/generate', mcpCommand: '', mcpToolName: 'generate_image', mcpUrl: '', mcpKeepAlive: true, modelHints: '' },
             agentC: { provider: 'openai', model: 'gpt-4o', apiBase: 'https://api.openai.com/v1', apiKey: '', temperature: 0.3 },
+            loop: { engine: 'classic' },
         };
         AppState.saveSettings();
         updateSystemSettingsUI();
@@ -495,6 +512,10 @@ function updateSystemSettingsUI() {
     set('ssApiBaseC', mc_.apiBase); set('ssApiKeyC', mc_.apiKey);
     document.getElementById('ssTempValueC').textContent = mc_.temperature;
     const tc = document.getElementById('ssTemperatureC'); if (tc) tc.value = mc_.temperature;
+    const loopCfg = mc.loop || {};
+    set('ssEngine', loopCfg.engine || 'classic');
+    const ssStep = document.getElementById('ssStepMode');
+    if (ssStep) ssStep.checked = !!loopCfg.step_mode;
 }
 
 async function loadSystemConfig() {
@@ -530,6 +551,9 @@ async function loadSystemConfig() {
         }
         if (config.loop) {
             AppState.settings.maxIterations = config.loop.max_iterations != null ? config.loop.max_iterations : AppState.settings.maxIterations;
+            mc.loop = mc.loop || {};
+            if (config.loop.engine) mc.loop.engine = config.loop.engine;
+            if (config.loop.step_mode != null) mc.loop.step_mode = config.loop.step_mode;
         }
         AppState.saveSettings();
         updateSystemSettingsUI();

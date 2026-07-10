@@ -44,6 +44,9 @@ const AppState = {
                 apiBase: 'https://api.openai.com/v1',
                 apiKey: '', temperature: 0.3,
             },
+            loop: {
+                engine: 'classic',
+            },
         },
     },
 
