@@ -416,15 +416,15 @@ class SessionManager:
         turns: list[dict] = []
         for tr in turn_rows:
             turn = dict(tr)
-            tc_cursor = await self._db.execute(
-                "SELECT call_id as id, tool_name, arguments, status, result, error, "
-                "started_at, completed_at "
-                "FROM agentic_tool_calls WHERE turn_id = ? ORDER BY call_id",
-                (turn["id"],),
-            )
-            tc_rows = await tc_cursor.fetchall()
-            turn["tool_calls"] = [dict(tc) for tc in tc_rows]
-            turns.append(turn)
+        tc_cursor = await self._db.execute(
+            "SELECT id, tool_name, arguments, status, result, error, "
+            "started_at, completed_at "
+            "FROM agentic_tool_calls WHERE turn_id = ? ORDER BY id",
+            (turn["id"],),
+        )
+        tc_rows = await tc_cursor.fetchall()
+        turn["tool_calls"] = [dict(tc) for tc in tc_rows]
+        turns.append(turn)
         return turns
 
     async def load_agentic_session(self, session_id: str):
