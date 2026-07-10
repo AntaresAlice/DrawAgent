@@ -270,7 +270,7 @@ class InnerLoop:
                             ),
                         ),
                     ],
-                    enabled_tools={"generate_image", "load_memory", "search_memory"},
+                    enabled_tools={"generate_image", "inspect_image", "load_memory", "search_memory"},
                     system_prompt=self._system_prompt,
                 )
             except Exception as gen_exc:
