@@ -141,6 +141,25 @@ body {
 }
 .chat-status.loading::before { background:var(--warning); animation: pulse 1s infinite; }
 @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+.engine-badge {
+    font-size: 10px; font-weight: 600;
+    padding: 2px 8px; border-radius: 10px;
+    background: var(--accent); color: #fff;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-right: 4px;
+}
+.engine-badge.agentic { background: var(--primary); }
+.engine-section {
+    background: var(--bg); border: 1px solid var(--accent);
+    border-radius: var(--radius-sm); padding: 16px;
+    margin-bottom: 16px;
+}
+.engine-desc {
+    font-size: 12px; color: var(--text-secondary);
+    margin: 6px 0 12px; line-height: 1.5;
+}
+.engine-select-row { display: flex; gap: 8px; }
+.engine-options { margin-top: 12px; }
 .header-btn {
     background:none; border:none; color:var(--text-secondary);
     font-size:16px; cursor:pointer; padding:8px;

@@ -387,6 +387,7 @@ const AppActions = {
         AppState.isAgentic = (mc.loop.engine === 'agentic');
         AppState.saveSettings();
         document.getElementById('systemSettingsOverlay').classList.remove('active');
+        updateEngineBadge();
 
         // Push config to backend so runtime uses new settings immediately
         try {
@@ -444,6 +445,7 @@ const AppActions = {
         };
         AppState.saveSettings();
         updateSystemSettingsUI();
+        updateEngineBadge();
         Renderer.showToast(_t('systemSettingsReset'), 'success');
     },
 
@@ -558,6 +560,7 @@ async function loadSystemConfig() {
         AppState.saveSettings();
         updateSystemSettingsUI();
         updateQuickParamsUI();
+        updateEngineBadge();
         console.debug('[Config] Loaded runtime config from backend');
     } catch (e) {
         console.warn('[Config] Failed to load config from backend, using localStorage:', e.message);
@@ -574,6 +577,14 @@ function updateQuickParamsUI() {
 }
 
 function syncQuickParams() {
-    // Read quick params from AppState settings on load
     updateQuickParamsUI();
+}
+
+function updateEngineBadge() {
+    const badge = document.getElementById('engineBadge');
+    if (!badge) return;
+    const mc = AppState.settings.systemConfig;
+    const engine = (mc.loop && mc.loop.engine) || 'classic';
+    badge.textContent = engine === 'agentic' ? '智能体' : '经典';
+    badge.className = 'engine-badge' + (engine === 'agentic' ? ' agentic' : '');
 }

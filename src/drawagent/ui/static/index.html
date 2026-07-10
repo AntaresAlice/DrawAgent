@@ -56,6 +56,7 @@
                 </button>
                 <div class="chat-header-info">
                     <h2 class="chat-title" id="chatTitle">DrawAgent</h2>
+                    <span class="engine-badge" id="engineBadge">经典</span>
                     <span class="chat-status" id="chatStatus">就绪</span>
                 </div>
                 <div class="chat-header-actions">
@@ -233,6 +234,23 @@
                     </button>
                 </div>
                 <div class="modal-body">
+                    <div class="setting-section engine-section">
+                        <div class="section-title"><i class="fa-solid fa-microchip"></i> 循环引擎</div>
+                        <p class="engine-desc">决定图像生成的驱动方式。经典模式按固定 5 阶段流水线执行（规划→细化→生成→审查→评估）；智能体模式由 AI 自主决策工具调用顺序与终止时机。</p>
+                        <div class="engine-select-row">
+                            <select class="text-input" id="ssEngine" style="flex:1;">
+                                <option value="classic">经典模式 — 5 阶段状态机</option>
+                                <option value="agentic">智能体模式 — LLM 自主驱动</option>
+                            </select>
+                        </div>
+                        <div class="engine-options">
+                            <label class="checkbox-label" for="ssStepMode">
+                                <input type="checkbox" id="ssStepMode">
+                                <span class="checkbox-custom"></span>
+                                逐步执行（经典模式下每轮暂停等待手动确认）
+                            </label>
+                        </div>
+                    </div>
                     <div class="setting-section">
                         <div class="section-title"><i class="fa-solid fa-brain"></i> Agent A (主 LLM)</div>
                         <div class="slider-group">
@@ -404,6 +422,7 @@
             updateSettingsUI();
             updateQuickParamsUI();
             syncQuickParams();
+            updateEngineBadge();
 
             const els = {
                 sidebar: document.getElementById('sidebar'),
