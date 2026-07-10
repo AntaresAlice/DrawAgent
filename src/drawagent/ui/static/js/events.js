@@ -18,6 +18,7 @@ const EventRouter = {
                     ActivityStream.onTurnStarted(event);
                     return;
                 case 'turn.ended':
+                    ActivityStream.onTurnEnded(event);
                     return;
                 case 'text.delta':
                     ActivityStream.onTextDelta(event);
@@ -31,15 +32,20 @@ const EventRouter = {
                 case 'session.finalized':
                     ActivityStream.onFinalized(event);
                     AppState.loopStatus = null;
+                    Renderer.removeLoading();
                     Renderer.setLoading(false);
                     return;
                 case 'session.compacted':
                     ActivityStream.onCompacted(event);
                     return;
+                case 'session.learned':
+                    ActivityStream.onLearned(event);
+                    return;
                 case 'interrupt.accepted':
                     ActivityStream.onInterruptAccepted(event);
                     return;
                 case 'loop.terminated':
+                    Renderer.removeLoading();
                     Renderer.setLoading(false);
                     AppState.loopStatus = null;
                     return;
@@ -204,7 +210,7 @@ const AppActions = {
         }
 
         WSClient.disconnect();
-        WSClient.connect(AppState.currentSessionId);
+        await WSClient.connect(AppState.currentSessionId);
 
         try {
             await API.sendMessage(text);
@@ -220,7 +226,7 @@ const AppActions = {
         if (!AppState.currentSessionId) return;
         Renderer.removeErrorCards();
         WSClient.disconnect();
-        WSClient.connect(AppState.currentSessionId);
+        await WSClient.connect(AppState.currentSessionId);
         try {
             await API.sendMessage(text);
             Renderer.showLoading();
@@ -385,6 +391,9 @@ const AppActions = {
         };
         // Reset mode tracking so next message uses correct event dispatch
         AppState.isAgentic = (mc.loop.engine === 'agentic');
+        if (AppState.isAgentic) {
+            ActivityStream.init();
+        }
         AppState.saveSettings();
         document.getElementById('systemSettingsOverlay').classList.remove('active');
         updateEngineBadge();

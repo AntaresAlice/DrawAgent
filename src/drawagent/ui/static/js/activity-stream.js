@@ -30,7 +30,7 @@ const ActivityStream = {
         el.innerHTML = `
             <div class="agentic-turn-header">
                 <span class="agentic-turn-icon"><i class="fa-solid fa-brain"></i></span>
-                <span class="agentic-turn-label">Agent is thinking...</span>
+                <span class="agentic-turn-label">${_t('agentThinking')}</span>
             </div>
             <div class="agentic-turn-body" style="display:none;">
                 <div class="agentic-text"></div>
@@ -53,7 +53,7 @@ const ActivityStream = {
         this._currentText += data.content || '';
         if (header) {
             const preview = this._currentText.slice(0, 80).replace(/\n/g, ' ');
-            header.textContent = preview || 'Agent is thinking...';
+            header.textContent = preview || _t('agentThinking');
         }
         if (textEl) {
             textEl.textContent = this._currentText;
@@ -151,6 +151,31 @@ const ActivityStream = {
             <div class="agentic-turn-header" style="font-size:12px;color:var(--text-secondary);">
                 <span class="agentic-turn-icon">📦</span>
                 <span>Context compacted (old turns summarized)</span>
+            </div>
+        `;
+        this._container.appendChild(el);
+        this._scroll();
+    },
+
+    /** LLM turn ended — update header to show completion */
+    onTurnEnded(data) {
+        if (this._currentTurn) {
+            const header = this._currentTurn.querySelector('.agentic-turn-label');
+            if (header && !this._currentTurn.querySelector('.agentic-tool-item')) {
+                const reason = data.finalized ? '' : ' (' + (data.finish_reason || 'done') + ')';
+                header.textContent = (data.finalized ? '✅ ' : '') + _t('agentThinking') + reason;
+            }
+        }
+    },
+
+    /** Learning event — compact note about pattern learned */
+    onLearned(data) {
+        const el = document.createElement('div');
+        el.className = 'agentic-turn info';
+        el.innerHTML = `
+            <div class="agentic-turn-header" style="font-size:12px;color:var(--text-secondary);">
+                <span class="agentic-turn-icon">🧠</span>
+                <span>Pattern learned for future sessions</span>
             </div>
         `;
         this._container.appendChild(el);

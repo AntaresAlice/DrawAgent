@@ -116,6 +116,10 @@ const WSClient = {
             console.debug('[WS] connected, session:', sessionId);
             this.reconnectAttempts = 0;
             this.reconnectDelay = 1000;
+            if (this._openResolve) {
+                this._openResolve();
+                this._openResolve = null;
+            }
         };
 
         this.ws.onclose = () => {
@@ -123,9 +127,27 @@ const WSClient = {
             this._tryReconnect();
         };
 
-        this.ws.onerror = (e) => {
-            console.error('WebSocket error:', e);
+        this.ws.onerror = (err) => {
+            console.error('[WS] error:', err);
+            if (this._openResolve) {
+                this._openResolve();  // resolve anyway so flow continues
+                this._openResolve = null;
+            }
         };
+
+        return new Promise((resolve) => {
+            this._openResolve = resolve;
+            if (this.ws.readyState === WebSocket.OPEN) {
+                resolve();
+                this._openResolve = null;
+            }
+            setTimeout(() => {
+                if (this._openResolve) {
+                    this._openResolve();
+                    this._openResolve = null;
+                }
+            }, 3000);
+        });
     },
 
     _tryReconnect() {
