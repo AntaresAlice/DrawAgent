@@ -266,7 +266,17 @@ const ActivityStream = {
     restoreFromHistory(history) {
         if (!this._container) this.init();
         const turns = history.agentic_turns || [];
+        // Show user messages paired with their turn
+        const messages = history.messages || [];
         for (const turn of turns) {
+            // Show user message before each turn that has a user_msg_id
+            if (turn.user_msg) {
+                const userEl = document.createElement('div');
+                userEl.className = 'message user';
+                userEl.innerHTML = '<div class="message-avatar"><i class="fa-solid fa-user"></i></div><div class="message-content">' + this._escHtml(turn.user_msg) + '</div>';
+                this._container.appendChild(userEl);
+            }
+
             const el = document.createElement('div');
             el.className = 'agentic-turn';
             el.id = 'agentic-turn-' + (turn.id || Date.now());
@@ -285,30 +295,29 @@ const ActivityStream = {
                         : (tc.tool_name === 'inspect_image' ? '\uD83D\uDD0D'
                         : (tc.tool_name === 'finalize' ? '\u2705' : '\uD83D\uDD27')));
                     const shortResult = this._formatToolResult(tc.tool_name, {tool_name: tc.tool_name, status: tc.status, result: tc.result, error: tc.error});
-                    return `<div class="agentic-tool-item collapsible">
-                        <div class="agentic-tool-trigger" onclick="ActivityStream._toggleTool(this)">
-                            <span class="agentic-tool-chevron">\u25B6</span>
-                            <span class="agentic-tool-icon">${icon}</span>
-                            <span class="agentic-tool-name">${this._escHtml(tc.tool_name)}</span>
-                            <span class="agentic-tool-summary">${this._escHtml(shortResult)}</span>
-                        </div>
-                        <div class="agentic-tool-detail" style="display:none;">
-                            <pre>${this._escHtml(JSON.stringify(tc, null, 2))}</pre>
-                        </div>
-                    </div>`;
+                    return '<div class="agentic-tool-item collapsible">' +
+                        '<div class="agentic-tool-trigger" onclick="ActivityStream._toggleTool(this)">' +
+                            '<span class="agentic-tool-chevron">\u25B6</span>' +
+                            '<span class="agentic-tool-icon">' + icon + '</span>' +
+                            '<span class="agentic-tool-name">' + this._escHtml(tc.tool_name) + '</span>' +
+                            '<span class="agentic-tool-summary">' + this._escHtml(shortResult) + '</span>' +
+                        '</div>' +
+                        '<div class="agentic-tool-detail" style="display:none;">' +
+                            '<pre>' + this._escHtml(JSON.stringify(tc, null, 2)) + '</pre>' +
+                        '</div>' +
+                    '</div>';
                 }).join('');
             }
 
-            el.innerHTML = `
-                <div class="agentic-turn-header${turn.finish_reason === 'stop' && !hasTools ? '' : ''}">
-                    <span class="agentic-turn-icon">${hasTools ? '\u2705' : '\uD83E\uDDE0'}</span>
-                    <span class="agentic-turn-label">${this._escHtml(headerText)}</span>
-                </div>
-                <div class="agentic-turn-body" style="display:block;">
-                    <div class="agentic-text">${this._escHtml(turn.assistant_text || '')}</div>
-                    <div class="agentic-tools">${toolsHtml}</div>
-                </div>
-            `;
+            el.innerHTML =
+                '<div class="agentic-turn-header">' +
+                    '<span class="agentic-turn-icon">' + (hasTools ? '\u2705' : '\uD83E\uDDE0') + '</span>' +
+                    '<span class="agentic-turn-label">' + this._escHtml(headerText) + '</span>' +
+                '</div>' +
+                '<div class="agentic-turn-body" style="display:block;">' +
+                    '<div class="agentic-text">' + this._escHtml(turn.assistant_text || '') + '</div>' +
+                    '<div class="agentic-tools">' + toolsHtml + '</div>' +
+                '</div>';
             this._container.appendChild(el);
         }
         if (turns.length > 0) {

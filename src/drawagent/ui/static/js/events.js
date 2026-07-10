@@ -253,14 +253,19 @@ const AppActions = {
             if (history.engine === 'agentic') {
                 AppState.isAgentic = true;
                 ActivityStream.init();
-                ActivityStream.restoreFromHistory(history);
             } else {
                 AppState.isAgentic = false;
             }
 
-            if (history.messages) {
+            // Render user messages first (chronological order)
+            if (history.messages && history.engine !== 'agentic') {
                 history.messages.forEach(m => Renderer.addMessage(m.role, m.content));
             }
+            // Agentic turn cards (include user messages inline via turn.user_msg)
+            if (history.engine === 'agentic' && history.agentic_turns) {
+                ActivityStream.restoreFromHistory(history);
+            }
+            // Classic iterations come after
             if (history.iterations) {
                 history.iterations.forEach(it => {
                     Renderer.addIterationCard(it.number, it.images, it.inspections, {
