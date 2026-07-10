@@ -84,6 +84,8 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
             body["tools"] = tools
         if tool_choice:
             body["tool_choice"] = tool_choice
+        elif tools:
+            body["tool_choice"] = "auto"
 
         vlog = VerboseLog.get()
         vlog.llm_request(self.model, self.model, messages, tools, self.api_base)
@@ -200,6 +202,7 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
 
         if tools:
             body["tools"] = tools
+            body["tool_choice"] = "auto"
 
         vlog = VerboseLog.get()
         vlog.llm_request(self.model, self.model, messages, tools, self.api_base)

@@ -386,6 +386,37 @@ class AgentA:
         text = "".join(text_parts)
         vlog.log("agent_a", f"finish={finish_reason}, text={len(text)}ch, tool_calls={len(accumulated)}")
 
+        # Fallback: DeepSeek may not stream tool calls — if finish_reason
+        # indicates tool_calls but nothing accumulated, try non-streaming.
+        if finish_reason == "tool_calls" and not accumulated:
+            logger = logging.getLogger("drawagent.agent_a")
+            logger.info("Stream had no tool calls despite finish_reason=tool_calls — trying non-streaming chat")
+            try:
+                continuation = await self.provider.chat(
+                    messages=llm_messages,
+                    tools=materialization.definitions,
+                )
+                cont_content = continuation.get("content", "")
+                cont_tool_calls = continuation.get("tool_calls") or []
+                if cont_content:
+                    text += "\n" + str(cont_content)
+                    await event_bus.emit("text.delta", {
+                        "content": cont_content,
+                        "session_id": self.session.id,
+                    })
+                if cont_tool_calls:
+                    logger.info("Non-streaming recovered %d tool calls", len(cont_tool_calls))
+                    for tc in cont_tool_calls:
+                        fn = tc.get("function", {})
+                        tc_id = tc.get("id") or ""
+                        if tc_id:
+                            accumulated[tc_id] = {
+                                "name": fn.get("name", ""),
+                                "arguments": fn.get("arguments", ""),
+                            }
+            except Exception:
+                logger.exception("Non-streaming fallback failed")
+
         # Build tool calls list
         tool_call_dicts: list[dict] = []
         for call_id, acc in accumulated.items():
