@@ -377,7 +377,11 @@ class AgenticLoop:
     async def _persist_turn(self, turn: AgenticTurn) -> None:
         """Save turn + tool calls to DB."""
         try:
-            seq = len(self.session.turns)
+            # Compute seq from max in-session + DB to avoid conflicts when
+            # session is partially restored (INSERT would fail on UNIQUE violation)
+            in_mem_seq = len(self.session.turns)
+            db_max_seq = await self.session_manager.max_agentic_turn_seq(self.session.id)
+            seq = max(in_mem_seq, (db_max_seq or 0) + 1)
             await self.session_manager.save_agentic_turn(
                 session_id=self.session.id,
                 turn_id=turn.id,

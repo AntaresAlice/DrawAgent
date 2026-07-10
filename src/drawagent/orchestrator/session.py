@@ -296,7 +296,7 @@ class SessionManager:
         if self._db is None:
             return
         await self._db.execute(
-            "INSERT OR REPLACE INTO agentic_messages (id, session_id, seq, delivery, text, admitted_at, promoted_at) "
+            "INSERT INTO agentic_messages (id, session_id, seq, delivery, text, admitted_at, promoted_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (msg_id, session_id, seq, delivery, text, admitted_at, promoted_at),
         )
@@ -333,6 +333,17 @@ class SessionManager:
         row = await cursor.fetchone()
         return row["cnt"] > 0 if row else False
 
+    async def max_agentic_turn_seq(self, session_id: str) -> int | None:
+        """Return the maximum seq number for agentic turns in this session."""
+        if self._db is None:
+            return None
+        cursor = await self._db.execute(
+            "SELECT MAX(seq) as max_seq FROM agentic_turns WHERE session_id = ?",
+            (session_id,),
+        )
+        row = await cursor.fetchone()
+        return row["max_seq"] if row and row["max_seq"] is not None else None
+
     async def save_agentic_turn(self, session_id: str, turn_id: str, seq: int,
                                 user_msg_id: str | None, assistant_text: str | None,
                                 finish_reason: str | None, tokens_used: int,
@@ -340,7 +351,7 @@ class SessionManager:
         if self._db is None:
             return
         await self._db.execute(
-            "INSERT OR REPLACE INTO agentic_turns (id, session_id, seq, user_msg_id, assistant_text, "
+            "INSERT INTO agentic_turns (id, session_id, seq, user_msg_id, assistant_text, "
             "finish_reason, tokens_used, started_at, completed_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (turn_id, session_id, seq, user_msg_id, assistant_text, finish_reason,
@@ -357,7 +368,7 @@ class SessionManager:
         if self._db is None:
             return
         await self._db.execute(
-            "INSERT OR REPLACE INTO agentic_tool_calls (id, turn_id, session_id, tool_name, arguments, "
+            "INSERT INTO agentic_tool_calls (id, turn_id, session_id, tool_name, arguments, "
             "status, result, error, started_at, completed_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (call_id, turn_id, session_id, tool_name, arguments, status, result, error, started_at, completed_at),
@@ -370,7 +381,7 @@ class SessionManager:
         if self._db is None:
             return
         await self._db.execute(
-            "INSERT OR REPLACE INTO agentic_compactions (id, session_id, seq, summary, recent_context, "
+            "INSERT INTO agentic_compactions (id, session_id, seq, summary, recent_context, "
             "compacted_turn_count, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (comp_id, session_id, seq, summary, recent_context, compacted_turn_count, created_at),
@@ -382,7 +393,7 @@ class SessionManager:
         if self._db is None:
             return
         await self._db.execute(
-            "INSERT OR REPLACE INTO agentic_lessons (id, session_id, seq, lesson, created_at) "
+            "INSERT INTO agentic_lessons (id, session_id, seq, lesson, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
             (lesson_id, session_id, seq, lesson, created_at),
         )
