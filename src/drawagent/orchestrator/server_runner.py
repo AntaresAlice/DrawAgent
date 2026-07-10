@@ -87,6 +87,10 @@ class ServerRunner:
         if inspect_tool is not None:
             inspect_tool.provider = self._provider_c
 
+        compare_tool = self.tool_registry.get("compare_images")
+        if compare_tool is not None:
+            compare_tool.provider = self._provider_c
+
         return self._provider_a, self._provider_c
 
     async def _execute_loop(self, session: Session, text: str) -> None:
