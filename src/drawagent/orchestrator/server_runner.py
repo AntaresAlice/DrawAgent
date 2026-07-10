@@ -344,23 +344,19 @@ class ServerRunner:
             self._save_config()
 
     def _save_config(self) -> None:
-        """Persist current runtime config to the config file."""
+        """Persist current runtime config to the config file.
+
+        Note: This saves API keys to disk. For production use, set keys via
+        environment variables instead and keep the config file key-free.
+        """
         import yaml
 
         def _model_to_dict(obj):
-            """Convert Pydantic model to dict, excluding secrets recursively."""
             if hasattr(obj, "model_dump"):
                 return obj.model_dump(exclude_none=True, mode="json")
             return obj
 
-        def _strip_api_keys(d):
-            """Recursively remove api_key fields from nested dicts."""
-            if isinstance(d, dict):
-                return {k: _strip_api_keys(v) for k, v in d.items() if k != "api_key"}
-            return d
-
         config_dict = _model_to_dict(self.config)
-        config_dict = _strip_api_keys(config_dict)
         try:
             with open(self._config_file, "w", encoding="utf-8") as f:
                 yaml.safe_dump(config_dict, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
