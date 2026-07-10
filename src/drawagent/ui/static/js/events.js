@@ -248,6 +248,16 @@ const AppActions = {
             const history = await API.getHistory();
             Renderer.clearMessages();
             AppState.viewer.images = [];
+
+            // Detect engine from history response
+            if (history.engine === 'agentic') {
+                AppState.isAgentic = true;
+                ActivityStream.init();
+                ActivityStream.restoreFromHistory(history);
+            } else {
+                AppState.isAgentic = false;
+            }
+
             if (history.messages) {
                 history.messages.forEach(m => Renderer.addMessage(m.role, m.content));
             }

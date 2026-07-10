@@ -387,3 +387,114 @@ class SessionManager:
             (lesson_id, session_id, seq, lesson, created_at),
         )
         await self._db.commit()
+
+    # ===== Agentic mode DB load operations =====
+
+    async def load_agentic_messages(self, session_id: str) -> list[dict]:
+        """Load user messages for an agentic session (for history display)."""
+        if self._db is None:
+            return []
+        cursor = await self._db.execute(
+            "SELECT id, seq, delivery, text, admitted_at, promoted_at "
+            "FROM agentic_messages WHERE session_id = ? ORDER BY seq",
+            (session_id,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def load_agentic_turns(self, session_id: str) -> list[dict]:
+        """Load all turns with their tool calls for an agentic session."""
+        if self._db is None:
+            return []
+        cursor = await self._db.execute(
+            "SELECT id, seq, user_msg_id, assistant_text, finish_reason, "
+            "tokens_used, started_at, completed_at "
+            "FROM agentic_turns WHERE session_id = ? ORDER BY seq",
+            (session_id,),
+        )
+        turn_rows = await cursor.fetchall()
+        turns: list[dict] = []
+        for tr in turn_rows:
+            turn = dict(tr)
+            tc_cursor = await self._db.execute(
+                "SELECT call_id as id, tool_name, arguments, status, result, error, "
+                "started_at, completed_at "
+                "FROM agentic_tool_calls WHERE turn_id = ? ORDER BY call_id",
+                (turn["id"],),
+            )
+            tc_rows = await tc_cursor.fetchall()
+            turn["tool_calls"] = [dict(tc) for tc in tc_rows]
+            turns.append(turn)
+        return turns
+
+    async def load_agentic_session(self, session_id: str):
+        """Rebuild an AgenticSession from the database.
+        Returns (AgenticSession, InputQueue) or None if no data exists.
+        """
+        from drawagent.models.agentic_session import (
+            AgenticSession, AgenticUserMessage, AgenticTurn, AgenticToolCall, InputQueue,
+        )
+        msgs = await self.load_agentic_messages(session_id)
+        raw_turns = await self.load_agentic_turns(session_id)
+        if not msgs and not raw_turns:
+            return None
+
+        session = AgenticSession(id=session_id)
+
+        # Restore messages
+        for m in msgs:
+            msg = AgenticUserMessage(
+                text=m.get("text", ""),
+                id=m.get("id", ""),
+                delivery=m.get("delivery", "queue"),
+                seq=m.get("seq", 0),
+            )
+            if m.get("promoted_at"):
+                msg.promoted_at = datetime.fromisoformat(m["promoted_at"])
+            session.messages.append(msg)
+
+        # Restore turns with tool calls
+        for rt in raw_turns:
+            tool_calls = []
+            for tc in rt.get("tool_calls", []):
+                atc = AgenticToolCall(
+                    call_id=tc.get("id", ""),
+                    tool_name=tc.get("tool_name", ""),
+                    arguments=json.loads(tc["arguments"]) if tc.get("arguments") and tc["arguments"] != "{}" else {},
+                    status=tc.get("status", "completed"),
+                    result=json.loads(tc["result"]) if tc.get("result") else None,
+                    error=tc.get("error"),
+                )
+                if tc.get("started_at"):
+                    atc.started_at = datetime.fromisoformat(tc["started_at"])
+                if tc.get("completed_at"):
+                    atc.completed_at = datetime.fromisoformat(tc["completed_at"])
+                tool_calls.append(atc)
+
+            # Find the user message for this turn (by user_msg_id)
+            user_msg = None
+            if rt.get("user_msg_id"):
+                for m in session.messages:
+                    if m.id == rt["user_msg_id"]:
+                        user_msg = m
+                        break
+            elif session.messages:
+                user_msg = session.messages[0]
+
+            turn = AgenticTurn(
+                id=rt.get("id", ""),
+                user_message=user_msg,
+                assistant_text=rt.get("assistant_text"),
+                tool_calls=tool_calls,
+                finish_reason=rt.get("finish_reason"),
+                tokens_used=rt.get("tokens_used", 0),
+            )
+            if rt.get("started_at"):
+                turn.started_at = datetime.fromisoformat(rt["started_at"])
+            if rt.get("completed_at"):
+                turn.completed_at = datetime.fromisoformat(rt["completed_at"])
+            session.turns.append(turn)
+
+        queue = InputQueue(session_id, self)
+        return session, queue
+        await self._db.commit()

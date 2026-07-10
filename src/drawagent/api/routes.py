@@ -157,12 +157,63 @@ async def get_history(session_id: str):
             decision_reasoning=it.decision.reasoning if it.decision else "",
         ))
 
+    # Load agentic turns from DB if this session uses agentic engine
+    agentic_turns: list[dict] = []
+    engine = "classic"
+    if _runner is not None:
+        state = _runner.get_agentic_state(session_id)
+        if state is not None:
+            engine = "agentic"
+            # Rebuild turns from in-memory state (has latest session)
+            agentic_session, _ = state
+            for turn in agentic_session.turns:
+                at = {
+                    "id": turn.id,
+                    "assistant_text": turn.assistant_text,
+                    "finish_reason": turn.finish_reason,
+                    "tokens_used": turn.tokens_used,
+                    "started_at": turn.started_at.isoformat() if turn.started_at else None,
+                    "completed_at": turn.completed_at.isoformat() if turn.completed_at else None,
+                    "user_msg": turn.user_message.text if turn.user_message else None,
+                    "tool_calls": [],
+                }
+                for tc in turn.tool_calls:
+                    at["tool_calls"].append({
+                        "call_id": tc.call_id,
+                        "tool_name": tc.tool_name,
+                        "arguments": tc.arguments,
+                        "status": tc.status,
+                        "result": tc.result,
+                        "error": tc.error,
+                    })
+                agentic_turns.append(at)
+        else:
+            db_turns = await _session_manager.load_agentic_turns(session_id)
+            if db_turns:
+                engine = "agentic"
+                agentic_turns = db_turns
+
+    # Collect all persisted messages (DB + in-memory)
+    all_messages = list(_message_ids.get(session_id, []))
+    if engine == "agentic":
+        db_msgs = await _session_manager.load_agentic_messages(session_id)
+        for dm in db_msgs:
+            if not any(m.get("id") == dm["id"] for m in all_messages):
+                all_messages.append({
+                    "id": dm["id"],
+                    "role": "user",
+                    "content": dm["text"],
+                    "created_at": dm.get("admitted_at") or "",
+                })
+
     return SessionHistoryResponse(
         session_id=session.id,
         user_request=session.user_request,
         state=session.state.value,
         iterations=iterations,
-        messages=_message_ids.get(session_id, []),
+        messages=all_messages,
+        agentic_turns=agentic_turns,
+        engine=engine,
     )
 
 

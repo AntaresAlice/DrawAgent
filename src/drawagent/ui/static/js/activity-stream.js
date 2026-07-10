@@ -262,6 +262,63 @@ const ActivityStream = {
         }
     },
 
+    /** Rebuild turn cards from persisted history data */
+    restoreFromHistory(history) {
+        if (!this._container) this.init();
+        const turns = history.agentic_turns || [];
+        for (const turn of turns) {
+            const el = document.createElement('div');
+            el.className = 'agentic-turn';
+            el.id = 'agentic-turn-' + (turn.id || Date.now());
+
+            const hasTools = turn.tool_calls && turn.tool_calls.length > 0;
+            const headerText = hasTools
+                ? (turn.tool_calls[0].tool_name === 'finalize' ? 'Task finalized' : 'Generated images')
+                : (turn.assistant_text || '').slice(0, 80) || _t('agentThinking');
+
+            let toolsHtml = '';
+            if (hasTools) {
+                toolsHtml = turn.tool_calls.map(tc => {
+                    const isError = tc.status === 'error';
+                    const icon = isError ? '\u26A0'
+                        : (tc.tool_name === 'generate_image' ? '\uD83C\uDFA8'
+                        : (tc.tool_name === 'inspect_image' ? '\uD83D\uDD0D'
+                        : (tc.tool_name === 'finalize' ? '\u2705' : '\uD83D\uDD27')));
+                    const shortResult = this._formatToolResult(tc.tool_name, {tool_name: tc.tool_name, status: tc.status, result: tc.result, error: tc.error});
+                    return `<div class="agentic-tool-item collapsible">
+                        <div class="agentic-tool-trigger" onclick="ActivityStream._toggleTool(this)">
+                            <span class="agentic-tool-chevron">\u25B6</span>
+                            <span class="agentic-tool-icon">${icon}</span>
+                            <span class="agentic-tool-name">${this._escHtml(tc.tool_name)}</span>
+                            <span class="agentic-tool-summary">${this._escHtml(shortResult)}</span>
+                        </div>
+                        <div class="agentic-tool-detail" style="display:none;">
+                            <pre>${this._escHtml(JSON.stringify(tc, null, 2))}</pre>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+
+            el.innerHTML = `
+                <div class="agentic-turn-header${turn.finish_reason === 'stop' && !hasTools ? '' : ''}">
+                    <span class="agentic-turn-icon">${hasTools ? '\u2705' : '\uD83E\uDDE0'}</span>
+                    <span class="agentic-turn-label">${this._escHtml(headerText)}</span>
+                </div>
+                <div class="agentic-turn-body" style="display:block;">
+                    <div class="agentic-text">${this._escHtml(turn.assistant_text || '')}</div>
+                    <div class="agentic-tools">${toolsHtml}</div>
+                </div>
+            `;
+            this._container.appendChild(el);
+        }
+        if (turns.length > 0) {
+            this._currentTurn = null;
+            this._currentText = '';
+            this._toolCallEls = {};
+        }
+        this._scroll();
+    },
+
     /** Reset state between sessions */
     reset() {
         this._currentTurn = null;

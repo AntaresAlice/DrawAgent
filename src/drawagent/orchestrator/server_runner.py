@@ -194,16 +194,26 @@ class ServerRunner:
             logger.info("Session %s agentic: reusing state (turns=%d, messages=%d)",
                         session_id, len(agentic_session.turns), len(agentic_session.messages))
         else:
-            agentic_session = AgenticSession(
-                id=session_id,
-                user_request=classic_session.user_request or text,
-            )
-            input_queue = InputQueue(session_id, self.session_manager)
-            msg = await input_queue.admit_and_persist(
-                classic_session.user_request or text, "queue"
-            )
-            agentic_session.messages.append(msg)
-            self._agentic_state[session_id] = (agentic_session, input_queue)
+            # Try to restore from DB first (persist-after-restart / session-switch)
+            restored = await self.session_manager.load_agentic_session(session_id)
+            if restored is not None:
+                agentic_session, input_queue = restored
+                msg = await input_queue.admit_and_persist(text, "queue")
+                agentic_session.messages.append(msg)
+                self._agentic_state[session_id] = (agentic_session, input_queue)
+                logger.info("Session %s agentic: restored from DB (turns=%d, messages=%d)",
+                            session_id, len(agentic_session.turns), len(agentic_session.messages))
+            else:
+                agentic_session = AgenticSession(
+                    id=session_id,
+                    user_request=classic_session.user_request or text,
+                )
+                input_queue = InputQueue(session_id, self.session_manager)
+                msg = await input_queue.admit_and_persist(
+                    classic_session.user_request or text, "queue"
+                )
+                agentic_session.messages.append(msg)
+                self._agentic_state[session_id] = (agentic_session, input_queue)
 
         try:
             provider_a, provider_c = await self._get_or_create_providers()

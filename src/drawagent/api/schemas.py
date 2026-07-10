@@ -70,6 +70,8 @@ class SessionHistoryResponse(BaseModel):
     state: str
     iterations: list[IterationSummary] = Field(default_factory=list)
     messages: list[dict] = Field(default_factory=list)
+    agentic_turns: list[dict] = Field(default_factory=list)
+    engine: str = "classic"
 
 
 class ServerStatus(BaseModel):
