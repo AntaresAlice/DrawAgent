@@ -119,43 +119,44 @@ class OpenAICompatibleProvider(LLMProvider, VisionProvider):
                             content=delta["content"],
                         )
 
-                    tool_calls = delta.get("tool_calls") or []
-                    for tc in tool_calls:
-                        tc_idx = tc.get("index", 0)
-                        fn = tc.get("function") or {}
+                tool_calls = delta.get("tool_calls") or []
+                for tc in tool_calls:
+                    tc_idx = tc.get("index", 0)
+                    fn = tc.get("function") or {}
 
-                        # Use index-based key for dedup (OpenAI/DSS: id only in first chunk)
-                        if tc_idx not in accumulated:
-                            tc_id = tc.get("id") or ""
-                            accumulated[tc_idx] = {
-                                "name": fn.get("name", ""),
-                                "arguments": "",
-                                "id": tc_id,
-                            }
-                            yield LLMStreamEvent(
-                                type="tool_call_start",
-                                tool_name=fn.get("name"),
-                                tool_call_id=tc_id,
-                            )
-
-                        args_delta = fn.get("arguments") or ""
-                        if args_delta:
-                            entry = accumulated[tc_idx]
-                            entry["arguments"] += args_delta
-                            yield LLMStreamEvent(
-                                type="tool_call_args",
-                                content=args_delta,
-                                tool_name=entry["name"],
-                                tool_call_id=entry["id"],
-                            )
-
-                    if finish_reason:
-                        usage = data.get("usage")
+                    # OpenAI/DSS: id only in first chunk. Fall back to
+                    # synthetic ID if the API omits it entirely.
+                    if tc_idx not in accumulated:
+                        tc_id = tc.get("id") or f"tc_{tc_idx}"
+                        accumulated[tc_idx] = {
+                            "name": fn.get("name", ""),
+                            "arguments": "",
+                            "id": tc_id,
+                        }
                         yield LLMStreamEvent(
-                            type="step_finish",
-                            finish_reason=finish_reason,
-                            usage=usage,
+                            type="tool_call_start",
+                            tool_name=fn.get("name"),
+                            tool_call_id=tc_id,
                         )
+
+                    args_delta = fn.get("arguments") or ""
+                    if args_delta:
+                        entry = accumulated[tc_idx]
+                        entry["arguments"] += args_delta
+                        yield LLMStreamEvent(
+                            type="tool_call_args",
+                            content=args_delta,
+                            tool_name=entry["name"],
+                            tool_call_id=entry["id"],
+                        )
+
+                if finish_reason:
+                    usage = data.get("usage")
+                    yield LLMStreamEvent(
+                        type="step_finish",
+                        finish_reason=finish_reason,
+                        usage=usage,
+                    )
                 # Log final assembled result
                 final_tool_calls = []
                 for tc_idx, entry in sorted(accumulated.items()):

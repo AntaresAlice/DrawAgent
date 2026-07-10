@@ -353,6 +353,7 @@ class AgentA:
         text_parts: list[str] = []
         finish_reason = None
         finalized_this_turn = False
+        _tc_counter = 0  # fallback for missing tool_call_id
 
         # Stream
         async for event in self.provider.chat_stream(
@@ -366,14 +367,19 @@ class AgentA:
                     "session_id": self.session.id,
                 })
             elif event.type == "tool_call_start":
-                if event.tool_call_id:
-                    accumulated[event.tool_call_id] = {
-                        "name": event.tool_name or "",
-                        "arguments": "",
-                    }
+                tc_id = event.tool_call_id or f"tc_{_tc_counter}"
+                _tc_counter += 1
+                accumulated[tc_id] = {
+                    "name": event.tool_name or "",
+                    "arguments": "",
+                }
             elif event.type == "tool_call_args":
-                if event.tool_call_id and event.tool_call_id in accumulated:
-                    accumulated[event.tool_call_id]["arguments"] += event.content
+                tc_id = event.tool_call_id
+                if not tc_id:
+                    # Try to find the last tool call without an ID
+                    tc_id = list(accumulated.keys())[-1] if accumulated else None
+                if tc_id and tc_id in accumulated:
+                    accumulated[tc_id]["arguments"] += event.content
             elif event.type == "step_finish":
                 finish_reason = event.finish_reason
 
@@ -406,6 +412,13 @@ class AgentA:
         tool_results: list[AgenticToolCall] = []
         if tool_call_dicts:
             ctx = ToolContext(session_id=self.session.id, agent="A")
+            # Emit tool.called for each tool BEFORE execution (in-progress indicator)
+            for td in tool_call_dicts:
+                await event_bus.emit("tool.called", {
+                    "session_id": self.session.id,
+                    "call_id": td["id"],
+                    "tool_name": td["function"]["name"],
+                })
             results = await materialization.settle(tool_call_dicts, ctx)
             for result in results:
                 now = datetime.now()

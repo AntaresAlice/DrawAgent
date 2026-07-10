@@ -61,6 +61,30 @@ const ActivityStream = {
         this._scroll();
     },
 
+    /** A tool was called — add in-progress indicator */
+    onToolCalled(data) {
+        if (!this._currentTurn) return;
+        const body = this._currentTurn.querySelector('.agentic-turn-body');
+        const toolsEl = this._currentTurn.querySelector('.agentic-tools');
+        if (body) body.style.display = 'block';
+
+        const toolName = data.tool_name || 'unknown';
+        const icon = toolName === 'generate_image' ? '\uD83C\uDFA8' : (toolName === 'inspect_image' ? '\uD83D\uDD0D' : (toolName === 'finalize' ? '\u2705' : '\uD83D\uDD27'));
+        const toolEl = document.createElement('div');
+        toolEl.className = 'agentic-tool-item';
+        toolEl.id = 'tool-' + (data.call_id || Date.now());
+        toolEl.innerHTML = `
+            <div class="agentic-tool-trigger" style="cursor:default;">
+                <span class="agentic-tool-chevron" style="visibility:hidden;">\u25B6</span>
+                <span class="agentic-tool-icon">${icon}</span>
+                <span class="agentic-tool-name">${this._escHtml(toolName)}</span>
+                <span class="agentic-tool-summary" style="color:var(--warning);"><i class="fa-solid fa-spinner fa-spin"></i> Running...</span>
+            </div>
+        `;
+        toolsEl.appendChild(toolEl);
+        this._scroll();
+    },
+
     /** A tool was called */
     onToolCompleted(data) {
         if (!this._currentTurn) return;
@@ -69,8 +93,13 @@ const ActivityStream = {
         const toolsEl = this._currentTurn.querySelector('.agentic-tools');
         if (body) body.style.display = 'block';
 
+        // Replace in-progress indicator if we have a matching call_id
+        const existing = document.getElementById('tool-' + (data.call_id || ''));
+        if (existing) existing.remove();
+
         const toolEl = document.createElement('div');
         toolEl.className = 'agentic-tool-item collapsible';
+        toolEl.id = 'tool-' + (data.call_id || Date.now());
         const toolName = data.tool_name || 'unknown';
         const isError = data.status === 'error';
         const icon = isError ? '⚠' : (toolName === 'generate_image' ? '🎨' : (toolName === 'inspect_image' ? '🔍' : (toolName === 'finalize' ? '✅' : '🔧')));

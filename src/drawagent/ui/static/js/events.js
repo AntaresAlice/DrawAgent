@@ -26,6 +26,9 @@ const EventRouter = {
                 case 'tool.completed':
                     ActivityStream.onToolCompleted(event);
                     return;
+                case 'tool.called':
+                    ActivityStream.onToolCalled(event);
+                    return;
                 case 'tool.failed':
                     ActivityStream.onToolCompleted(event);  // same handler
                     return;
