@@ -422,7 +422,7 @@
             updateSettingsUI();
             updateQuickParamsUI();
             syncQuickParams();
-            updateEngineBadge();
+            if (typeof updateEngineBadge === 'function') updateEngineBadge();
 
             const els = {
                 sidebar: document.getElementById('sidebar'),
