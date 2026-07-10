@@ -121,15 +121,22 @@ const ActivityStream = {
         if (toolName === 'generate_image' && !isError) {
             if (header) header.textContent = 'Generated image ✓';
             if (data.result && data.result.output) {
-                const match = data.result.output.match(/((?:\/|[A-Z]:)[^\s,;]+\.png)/i);
-                if (match) {
-                    const imgPath = match[1];
-                    const filename = imgPath.replace(/\\/g, '/').split('/').pop();
-                    const imgEl = document.createElement('div');
-                    imgEl.className = 'agentic-image-preview';
-                    const allImages = [API.imageUrl(filename)];
-                    imgEl.innerHTML = '<img src="' + API.imageUrl(filename) + '" alt="' + this._escHtmlAttr(filename) + '" style="max-width:180px;max-height:240px;border-radius:8px;margin:8px 0;cursor:pointer;" onclick="Viewer.open(' + JSON.stringify(allImages) + ', 0)">';
-                    toolsEl.appendChild(imgEl);
+                const matches = [...data.result.output.matchAll(/((?:\/|[A-Z]:)[^\s,;]+\.png)/gi)];
+                if (matches.length > 0) {
+                    const allImages = [];
+                    for (const m of matches) {
+                        const filename = m[1].replace(/\\/g, '/').split('/').pop();
+                        allImages.push(API.imageUrl(filename));
+                    }
+                    const allImagesJson = JSON.stringify(allImages);
+                    for (let i = 0; i < allImages.length; i++) {
+                        const url = allImages[i];
+                        const filename = matches[i][1].replace(/\\/g, '/').split('/').pop();
+                        const imgEl = document.createElement('div');
+                        imgEl.className = 'agentic-image-preview';
+                        imgEl.innerHTML = '<img src="' + url + '" alt="' + this._escHtmlAttr(filename) + '" style="max-width:180px;max-height:240px;border-radius:8px;margin:8px 0;cursor:pointer;" onclick="event.stopPropagation(); Viewer.open(' + allImagesJson + ', ' + i + ')">';
+                        toolsEl.appendChild(imgEl);
+                    }
                 }
             }
         } else if (toolName === 'inspect_image' && !isError) {
