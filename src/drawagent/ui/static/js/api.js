@@ -42,10 +42,14 @@ const API = {
         return data;
     },
 
-    async sendMessage(text) {
+    async sendMessage(text, generationParams = null) {
         const sid = AppState.currentSessionId;
         if (!sid) throw new Error('No active session');
-        return this.request('POST', `/api/sessions/${sid}/message`, { text });
+        const body = { text };
+        if (generationParams) {
+            body.generation_params = generationParams;
+        }
+        return this.request('POST', `/api/sessions/${sid}/message`, body);
     },
 
     async sendInterrupt(action, data = {}) {

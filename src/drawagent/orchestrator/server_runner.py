@@ -57,7 +57,8 @@ class ServerRunner:
         self._active_tasks: dict[str, asyncio.Task] = {}
         self._agentic_state: dict[str, tuple[AgenticSession, InputQueue]] = {}
 
-    async def run_for_message(self, session: Session, text: str) -> None:
+    async def run_for_message(self, session: Session, text: str,
+                             generation_params: dict | None = None) -> None:
         """Launch the inner loop as a background task for a user message."""
         session_id = session.id
 
@@ -68,7 +69,7 @@ class ServerRunner:
                 return
 
         task = asyncio.create_task(
-            self._execute_loop(session, text),
+            self._execute_loop(session, text, generation_params),
             name=f"loop-{session_id}",
         )
         self._active_tasks[session_id] = task
@@ -93,10 +94,11 @@ class ServerRunner:
 
         return self._provider_a, self._provider_c
 
-    async def _execute_loop(self, session: Session, text: str) -> None:
+    async def _execute_loop(self, session: Session, text: str,
+                            generation_params: dict | None = None) -> None:
         engine = self.config.loop.engine
         if engine == "agentic":
-            await self._run_agentic_loop(session, text)
+            await self._run_agentic_loop(session, text, generation_params)
             return
         # ===== Classic path (unchanged) =====
         await self._run_classic_loop(session, text)
@@ -177,7 +179,8 @@ class ServerRunner:
         finally:
             self._active_tasks.pop(session_id, None)
 
-    async def _run_agentic_loop(self, classic_session: Session, text: str) -> None:
+    async def _run_agentic_loop(self, classic_session: Session, text: str,
+                                 generation_params: dict | None = None) -> None:
         """Agentic mode — LLM-driven generation loop.
 
         Creates or reuses an AgenticSession per session_id so that
@@ -185,6 +188,31 @@ class ServerRunner:
         The classic Session object is used only to carry the session ID.
         """
         session_id = classic_session.id
+
+        # Temporarily override AgentB default_params with per-message params
+        # from the frontend quick-params bar. Restored after the loop finishes.
+        prev_defaults = None
+        if generation_params:
+            agent_b = self.config.agent_b
+            prev_defaults = dict(getattr(agent_b, "default_params", {}))
+            merged = dict(prev_defaults)
+            # JS sends camelCase keys; translate to snake_case for AgentBConfig
+            _key_map = {
+                "width": "width", "height": "height",
+                "steps": "steps", "guidance": "guidance",
+                "cfgTruncation": "cfg_truncation", "cfg_truncation": "cfg_truncation",
+                "numImages": "num_images", "num_images": "num_images",
+                "seed": "seed",
+                "negativePrompt": "negative_prompt", "negative_prompt": "negative_prompt",
+            }
+            for js_key, value in generation_params.items():
+                py_key = _key_map.get(js_key, js_key)
+                if py_key in ("width", "height", "steps", "guidance", "cfg_truncation",
+                              "seed", "num_images", "negative_prompt"):
+                    merged[py_key] = value
+            setattr(agent_b, "default_params", merged)
+            logger.debug("Session %s: per-message params applied: %s", session_id,
+                         {k: merged[k] for k in sorted(merged) if k not in ("negative_prompt",)})
 
         # Reuse or create agentic state for this session
         if session_id in self._agentic_state:
@@ -276,6 +304,9 @@ class ServerRunner:
                 session_id=session_id,
             )
         finally:
+            if prev_defaults is not None:
+                setattr(self.config.agent_b, "default_params", prev_defaults)
+                logger.debug("Session %s: restored AgentB default_params", session_id)
             self._active_tasks.pop(session_id, None)
 
     async def cancel(self, session_id: str) -> bool:

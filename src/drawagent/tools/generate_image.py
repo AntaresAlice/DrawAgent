@@ -131,7 +131,7 @@ class GenerateImageTool(BaseTool):
         })
 
         seeds = []
-        base_seed = args.get("seed", -1)
+        base_seed = args.get("seed", params.get("seed", -1))
         if base_seed < 0:
             import random
             base_seed = random.randint(0, 2**31 - 1)

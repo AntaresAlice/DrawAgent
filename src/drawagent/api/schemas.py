@@ -19,6 +19,7 @@ class CreateSessionResponse(BaseModel):
 
 class SendMessageRequest(BaseModel):
     text: str
+    generation_params: dict | None = None
 
 
 class SendMessageResponse(BaseModel):

@@ -216,7 +216,8 @@ const AppActions = {
         await WSClient.connect(AppState.currentSessionId);
 
         try {
-            await API.sendMessage(text);
+            const params = AppState.settings.generationParams || {};
+            await API.sendMessage(text, params);
             Renderer.showLoading();
             AppState.viewer.images = [];
         } catch (e) {
@@ -231,7 +232,8 @@ const AppActions = {
         WSClient.disconnect();
         await WSClient.connect(AppState.currentSessionId);
         try {
-            await API.sendMessage(text);
+            const params = AppState.settings.generationParams || {};
+            await API.sendMessage(text, params);
             Renderer.showLoading();
             AppState.viewer.images = [];
         } catch (e) {

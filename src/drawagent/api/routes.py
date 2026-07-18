@@ -97,7 +97,9 @@ async def send_message(session_id: str, req: SendMessageRequest):
 
     if _runner is not None:
         import asyncio
-        asyncio.create_task(_runner.run_for_message(session, req.text))
+        asyncio.create_task(
+            _runner.run_for_message(session, req.text, req.generation_params)
+        )
 
     return SendMessageResponse(
         session_id=session_id,

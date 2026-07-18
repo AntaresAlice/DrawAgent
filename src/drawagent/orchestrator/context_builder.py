@@ -163,8 +163,14 @@ class ContextBuilder:
         parts.append(
             f"## Default Parameters: width={params.get('width', 1024)}, "
             f"height={params.get('height', 1024)}, steps={params.get('steps', 30)}, "
-            f"guidance={params.get('guidance', 7.0)}"
+            f"guidance={params.get('guidance', 7.0)}, "
+            f"cfg_truncation={params.get('cfg_truncation', 0.6)}, "
+            f"seed={params.get('seed', -1)}, "
+            f"num_images={params.get('num_images', 2)}"
         )
+        neg = params.get("negative_prompt", "")
+        if neg:
+            parts.append(f"## Default Negative Prompt: {neg}")
         hints = getattr(self._agent_b_config, "model_hints", "")
         if hints and hints.strip():
             parts.append(f"## Model-Specific Knowledge\n{hints.strip()}")
