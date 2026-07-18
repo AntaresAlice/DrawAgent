@@ -9,6 +9,7 @@ Classic 5-phase loop (orchestrator/loop.py) is fully preserved and untouched.
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -18,7 +19,7 @@ from drawagent.orchestrator.guardrails import SessionGuardrails
 from drawagent.orchestrator.context_builder import ContextBuilder
 from drawagent.models.agentic_session import (
     AgenticSession, AgenticTurn, AgenticUserMessage,
-    AgenticTurnResult, InputQueue,
+    AgenticTurnResult, InputQueue, AgenticIteration,
 )
 from drawagent.providers.base import LLMMessage
 
@@ -99,6 +100,7 @@ class AgenticLoop:
 
         while needs_rerun and outer_round < self.max_agentic_rounds:
             needs_rerun = False
+            _turns_before_iteration = len(self.session.turns)
 
             # ── Check if we have anything to do ──
             if not force_first_run:
@@ -126,6 +128,7 @@ class AgenticLoop:
             tool_round = 0
             needs_continuation = True
             _force_injected = False  # prevent infinite force-finalize injection
+            _images_generated = False  # track if LLM has generated images this outer cycle
             self._consecutive_empty = 0  # guardrail: consecutive empty LLM responses
             self._consecutive_no_image = 0  # guardrail: consecutive turns without image gen
 
@@ -194,6 +197,8 @@ class AgenticLoop:
 
                 # 4c. Guardrail: no image generated
                 has_gen = any(tc.tool_name == "generate_image" for tc in result.tool_results)
+                if has_gen:
+                    _images_generated = True
                 if result.tool_results and not has_gen:
                     self._consecutive_no_image += 1
                     if self.guardrails.check_no_image_generated(self._consecutive_no_image):
@@ -247,7 +252,7 @@ class AgenticLoop:
                     needs_continuation = True
                     tool_round += 1
                 else:
-                    needs_continuation = self._needs_continuation_check(result)
+                    needs_continuation = self._needs_continuation_check(result, _images_generated)
                     if needs_continuation:
                         tool_round += 1
 
@@ -258,14 +263,18 @@ class AgenticLoop:
                         needs_continuation = True
                         needs_rerun = True
 
-            # 9. Reflect (learning) — inserted at outer loop level
+            # 9. Build iteration from new turns (must be before reflect
+            #     so learner has access to iteration data)
+            self._build_iteration(_turns_before_iteration)
+
+            # 10. Reflect (learning)
             if self.learning_enabled and self.session.iterations:
                 from drawagent.orchestrator.learner import ExperienceLearner
                 learner = ExperienceLearner(self.agent_a, {"agentic": self._agentic_cfg})
                 learner.set_event_bus(self.event_bus)
                 await learner.reflect(self.session)
 
-            # 10. Check for next queue item
+            # 11. Check for next queue item
             if self.queue and await self.queue.has_pending("queue"):
                 needs_rerun = True
 
@@ -278,7 +287,7 @@ class AgenticLoop:
     # Continuation / verification helpers
     # ------------------------------------------------------------------
 
-    def _needs_continuation_check(self, result: AgenticTurnResult) -> bool:
+    def _needs_continuation_check(self, result: AgenticTurnResult, images_generated: bool = False) -> bool:
         """Determine if the loop should continue after LLM returned text-only.
 
         Returns True = need to continue (ask LLM to do more).
@@ -286,14 +295,58 @@ class AgenticLoop:
 
         Logic:
         - Empty text → always continue (nothing produced)
-        - Text but no image iterations yet → continue (LLM hasn't generated anything)
+        - Text but no images generated yet → continue (LLM hasn't done anything)
         - Text + images exist → allow stopping (LLM's judgment stands)
         """
         if not result.text or not result.text.strip():
             return True
-        if not self.session.iterations:
+        if not images_generated and not self.session.iterations:
             return True
         return False
+
+    def _build_iteration(self, turns_before: int) -> None:
+        """Build an AgenticIteration from turns produced in this outer cycle."""
+        new_turns = self.session.turns[turns_before:]
+        if not new_turns:
+            return
+
+        images: list[dict] = []
+        inspections: list[dict] = []
+
+        for turn in new_turns:
+            for tc in turn.tool_calls:
+                if not tc.result:
+                    continue
+                # tc.result is {"output": "...", "metadata": {...}}
+                meta = tc.result.get("metadata", {}) if isinstance(tc.result, dict) else {}
+                if tc.tool_name == "generate_image" and tc.status == "completed":
+                    img_list = meta.get("images") or []
+                    for entry in img_list:
+                        if "error" not in entry:
+                            images.append({
+                                "path": entry.get("path", ""),
+                                "seed": entry.get("seed", ""),
+                                "width": entry.get("width", 960),
+                                "height": entry.get("height", 1280),
+                            })
+                elif tc.tool_name in ("inspect_image", "compare_images") and tc.status == "completed":
+                    inspections.append({
+                        "image_path": meta.get("image_path", ""),
+                        "task_description": meta.get("task_description", ""),
+                        "observation": tc.result.get("output", "") if isinstance(tc.result, dict) else str(tc.result),
+                    })
+
+        iteration = AgenticIteration(
+            number=len(self.session.iterations) + 1,
+            turns=[t.id for t in new_turns],
+            images=images,
+            inspections=inspections,
+        )
+        self.session.iterations.append(iteration)
+        logger.debug(
+            "Built iteration #%d: %d turns, %d images, %d inspections",
+            iteration.number, len(new_turns), len(images), len(inspections),
+        )
 
     def _verify_finalize(self, result: AgenticTurnResult) -> bool:
         """Verify LLM's finalize declaration against actual inspection results.
@@ -401,7 +454,7 @@ class AgenticLoop:
                     tool_name=tc.tool_name,
                     arguments=str(tc.arguments),
                     status=tc.status,
-                    result=str(tc.result) if tc.result else None,
+                    result=_json.dumps(tc.result) if tc.result else None,
                     error=tc.error,
                     started_at=tc.started_at.isoformat() if tc.started_at else None,
                     completed_at=tc.completed_at.isoformat() if tc.completed_at else None,

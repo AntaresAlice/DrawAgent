@@ -458,7 +458,7 @@ class AgentA:
                     tool_name=result.name,
                     arguments=_parsed_args.get(result.tool_call_id, {}),
                     status="completed" if result.success else "error",
-                    result={"output": result.output} if result.success else None,
+                    result={"output": result.output, "metadata": result.metadata} if result.success else None,
                     error=result.error,
                     started_at=now,
                     completed_at=now,
@@ -474,7 +474,7 @@ class AgentA:
                     "call_id": result.tool_call_id,
                     "tool_name": result.name,
                     "status": "completed" if result.success else "error",
-                    "result": {"output": result.output} if result.success else None,
+                    "result": {"output": result.output, "metadata": result.metadata} if result.success else None,
                     "error": result.error if not result.success else None,
                 })
 
