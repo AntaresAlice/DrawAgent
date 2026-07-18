@@ -208,7 +208,11 @@ class InputQueue:
         )
 
     async def promote_next_queued(self) -> int:
-        """Promote exactly one queued message (FIFO). Returns count (0 or 1)."""
+        """Promote all unpromoted queued messages. Returns count of promoted messages.
+
+        Despite the name, this promotes ALL (not just one) — the docstring was
+        inaccurate. For typical single-message-at-a-time HTTP flow this is harmless.
+        """
         return await self._db.promote_agentic_messages(
             self._session_id, "queue", cutoff_seq=None
         )

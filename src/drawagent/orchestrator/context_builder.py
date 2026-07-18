@@ -66,9 +66,14 @@ class ContextBuilder:
                 ),
             })
 
-        # Unpromoted messages (system-injected steering, force_prompt)
-        pending = [m for m in session.messages if m.promoted_at is None]
-        for m in pending:
+        # Messages not yet consumed by any turn — show as new user inputs.
+        # Uses turn->user_message tracking instead of promoted_at, which avoids
+        # the DB/in-memory sync problem where promoted_at is never synced back.
+        consumed_ids = {
+            turn.user_message.id for turn in session.turns if turn.user_message
+        }
+        unconsumed = [m for m in session.messages if m.id not in consumed_ids]
+        for m in unconsumed:
             messages.append({"role": "user", "content": m.text})
 
         # Turns: user messages + assistant + tool calls + tool results

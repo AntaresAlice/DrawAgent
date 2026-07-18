@@ -111,9 +111,11 @@ class AgenticLoop:
                             break
                     else:
                         await self.queue.promote_steers()
+                        self._sync_promoted_messages()
                 elif self.queue:
                     await self.queue.promote_next_queued()
                     await self.queue.promote_steers()
+                    self._sync_promoted_messages()
             force_first_run = False
 
             # ── Guardrail: outer round limit ──
@@ -260,6 +262,7 @@ class AgenticLoop:
                 if not needs_continuation:
                     if self.queue and await self.queue.has_pending("steer"):
                         await self.queue.promote_steers()
+                        self._sync_promoted_messages()
                         needs_continuation = True
                         needs_rerun = True
 
@@ -286,6 +289,18 @@ class AgenticLoop:
     # ------------------------------------------------------------------
     # Continuation / verification helpers
     # ------------------------------------------------------------------
+
+    def _sync_promoted_messages(self) -> None:
+        """Sync in-memory promoted_at for messages whose DB row was promoted.
+
+        Called after every promote_next_queued() or promote_steers() to ensure
+        ContextBuilder.build_messages() doesn't re-inject already-consumed
+        user messages as "pending" on every context build.
+        """
+        now = datetime.now()
+        for msg in self.session.messages:
+            if msg.promoted_at is None:
+                msg.promoted_at = now
 
     def _needs_continuation_check(self, result: AgenticTurnResult, images_generated: bool = False) -> bool:
         """Determine if the loop should continue after LLM returned text-only.
@@ -386,6 +401,8 @@ class AgenticLoop:
         """Inject system message explaining why finalize was rejected.
 
         Tells the LLM exactly which inspection items failed so it can fix them.
+        Created as a synthetic turn (not just a message) so build_messages()
+        includes it exactly once via the turn section.
         """
         if not self.session.iterations:
             return
@@ -408,9 +425,20 @@ class AgenticLoop:
             promoted_at=datetime.now(),
         )
         self.session.messages.append(msg)
+        # Create a synthetic turn so the message appears exactly once in context
+        steer_turn = AgenticTurn(
+            user_message=msg,
+            assistant_text="",
+            tool_calls=[],
+            finish_reason="stop",
+        )
+        self.session.turns.append(steer_turn)
 
     def _inject_force_finalize_message(self) -> None:
-        """Inject message forcing LLM to finalize (tool round limit reached)."""
+        """Inject message forcing LLM to finalize (tool round limit reached).
+
+        Created as a synthetic turn so build_messages() includes it exactly once.
+        """
         msg_text = (
             f"Maximum tool call rounds ({self.max_tool_rounds}) reached. "
             "You MUST call finalize NOW with whatever results you have. "
@@ -422,6 +450,13 @@ class AgenticLoop:
             promoted_at=datetime.now(),
         )
         self.session.messages.append(msg)
+        steer_turn = AgenticTurn(
+            user_message=msg,
+            assistant_text="",
+            tool_calls=[],
+            finish_reason="stop",
+        )
+        self.session.turns.append(steer_turn)
 
     # ------------------------------------------------------------------
     # Persistence
