@@ -86,6 +86,32 @@ class GenerateImageTool(BaseTool):
         self.config = config
         self.output_dir = Path(output_dir).resolve()
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def to_openai_schema(self) -> dict:
+        """Override to inject live config defaults into tool schema.
+
+        Without this, the LLM sees hard-coded defaults (e.g. width=1024) in the
+        tool definition while the system prompt shows different values (e.g.
+        width=960 from per-message params). This causes the LLM to pass the
+        wrong explicit values, overriding user intent.
+        """
+        import copy
+        schema = copy.deepcopy(self.parameters_schema)
+        defaults = getattr(self.config, "default_params", {})
+        if defaults:
+            props = schema.get("properties", {})
+            for key in ("width", "height", "steps", "guidance", "cfg_truncation",
+                        "num_images", "seed"):
+                if key in defaults and key in props:
+                    props[key]["default"] = defaults[key]
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": schema,
+            },
+        }
         self._client: httpx.AsyncClient | None = None
         self._mcp_provider = None
 
