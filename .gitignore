@@ -21,7 +21,8 @@ outputs/
 # Temp / scratch
 temp/
 tmp_*
-scripts/outputs/
+scripts/
+docs/
 
 # IDE
 .idea/
