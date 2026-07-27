@@ -1,5 +1,12 @@
 # DrawAgent — Your AI Art Director
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-green.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/fastapi-0.115%2B-teal.svg)](https://fastapi.tiangolo.com/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+English | [中文](README.md)
+
 > Describe what you want. Leave the rest to the Agent. DrawAgent empowers an LLM to act like a seasoned art director — understanding your vision, crafting prompts, orchestrating image generation, inspecting results, and iterating autonomously until you're satisfied.
 
 ---
@@ -113,7 +120,7 @@ All config values support `${ENV_VAR}` environment variable references — no se
 ### Installation
 
 ```bash
-git clone https://github.com/yourorg/DrawAgent.git
+git clone https://github.com/AntaresAlice/DrawAgent.git
 cd DrawAgent
 pip install -e .
 ```
