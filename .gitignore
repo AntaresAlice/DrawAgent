@@ -24,6 +24,9 @@ tmp_*
 scripts/
 docs/
 
+# pytest
+.pytest_cache/
+
 # IDE
 .idea/
 .vscode/
